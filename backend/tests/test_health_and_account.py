@@ -79,3 +79,14 @@ def test_account_deletion_removes_everything(
     # The token still verifies cryptographically, but the local account is gone; a new
     # empty profile would be created, with no access to the old project.
     assert client.get(f"/api/v1/projects/{pid}", headers=auth).status_code == 404
+
+
+def test_cli_set_plan(client: TestClient, auth: dict[str, str]) -> None:
+    from app.cli import main
+
+    email = client.get("/api/v1/me", headers=auth).json()["email"]
+    assert main(["set-plan", email, "nope"]) == 2
+    assert main(["set-plan", "missing@example.com", "pro"]) == 1
+    assert main(["set-plan", email, "creator"]) == 0
+    usage = client.get("/api/v1/usage", headers=auth).json()
+    assert usage["plan"]["code"] == "creator" and usage["plan"]["watermark"] is False

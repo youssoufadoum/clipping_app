@@ -1,6 +1,7 @@
 # Secrets
 .env
 .env.*
+!.env.compose
 !.env.example
 !**/.env.example
 

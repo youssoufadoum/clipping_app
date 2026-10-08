@@ -1,0 +1,59 @@
+# Local full-stack environment. Uses the development auth provider and local
+# file storage shared between the API and worker through a volume.
+# For production use Supabase Auth and S3-compatible storage (see README).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: virello
+      POSTGRES_PASSWORD: virello
+      POSTGRES_DB: virello
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U virello"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: { context: ./backend, target: api }
+    env_file: [./backend/.env.compose]
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes: [media:/app/var]
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    build: { context: ./backend, dockerfile: Dockerfile.worker }
+    env_file: [./backend/.env.compose]
+    volumes: [media:/app/var]
+    depends_on: [api]
+
+  beat:
+    build: { context: ./backend, dockerfile: Dockerfile.worker }
+    env_file: [./backend/.env.compose]
+    command: celery -A app.worker.celery_app beat --loglevel INFO --schedule /tmp/celerybeat-schedule
+    depends_on: [api]
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+        NEXT_PUBLIC_AUTH_MODE: local
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  media:

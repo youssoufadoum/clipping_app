@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Two surfaces share one token vocabulary:
+ *   .theme-site — light marketing pages
+ *   .theme-app  — dark editing workspace
+ */
+:root,
+.theme-site {
+  --bg: #ffffff;
+  --bg-subtle: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #f1f3f9;
+  --border: #e3e6ef;
+  --border-strong: #cdd2e0;
+  --fg: #0e1220;
+  --muted: #5b6275;
+  --accent: #6d4aff;
+  --accent-hover: #5b37f0;
+  --accent-fg: #ffffff;
+  --accent-soft: #efeaff;
+  --accent-2: #3f7bff;
+  --success: #0f9f6e;
+  --success-soft: #e3f7ef;
+  --warning: #b7791f;
+  --warning-soft: #fdf3e1;
+  --danger: #d6344c;
+  --danger-soft: #fde8eb;
+  --ring: #6d4aff;
+}
+
+.theme-app {
+  --bg: #0a0c13;
+  --bg-subtle: #0e1119;
+  --surface: #121521;
+  --surface-2: #191d2b;
+  --border: #242a3b;
+  --border-strong: #323a51;
+  --fg: #e8eaf2;
+  --muted: #8d94a9;
+  --accent: #8064ff;
+  --accent-hover: #9479ff;
+  --accent-fg: #ffffff;
+  --accent-soft: #221c45;
+  --accent-2: #5b8cff;
+  --success: #34d399;
+  --success-soft: #0d2e24;
+  --warning: #fbbf24;
+  --warning-soft: #33270b;
+  --danger: #fb7185;
+  --danger-soft: #3a1520;
+  --ring: #9479ff;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-2: var(--accent-2);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ring: var(--ring);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-card: 14px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
