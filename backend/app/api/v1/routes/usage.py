@@ -18,6 +18,7 @@ router = APIRouter(tags=["usage & billing"])
 USAGE_POLICY = [
     "Source minutes are counted once per project when its video is processed successfully.",
     "Render minutes are counted per successful export, based on the exported clip's length.",
+    "AI minutes are counted once per video when it is transcribed for AI clip discovery.",
     "Failed, cancelled and rejected jobs are never charged.",
     "Renders that are queued or in progress are reserved against your remaining minutes.",
     "Usage is metered in tenths of a minute, rounded up, and resets on the 1st of each month "
@@ -47,6 +48,9 @@ def get_usage(user: Profile = Depends(current_user), db: Session = Depends(get_d
         render_minutes_reserved=s.render_minutes_reserved,
         render_minutes_limit=s.plan.monthly_render_minutes,
         render_minutes_remaining=s.render_minutes_remaining,
+        ai_minutes_used=s.ai_minutes_used,
+        ai_minutes_limit=s.plan.monthly_ai_minutes,
+        ai_minutes_remaining=s.ai_minutes_remaining,
         policy=USAGE_POLICY,
     )
 

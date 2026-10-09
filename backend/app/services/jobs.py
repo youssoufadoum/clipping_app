@@ -45,6 +45,7 @@ PROJECT_TRANSITIONS: dict[str, set[str]] = {
     },
     ProjectStatus.ready: {
         ProjectStatus.transcribing,
+        ProjectStatus.analyzing,
         ProjectStatus.rendering,
         ProjectStatus.completed,
         ProjectStatus.archived,
@@ -155,6 +156,7 @@ def create_job(
 TASK_NAMES = {
     "inspect_media": "virello.inspect_media",
     "render_clip": "virello.render_clip",
+    "generate_shorts": "virello.generate_shorts",
 }
 
 

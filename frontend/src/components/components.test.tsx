@@ -7,6 +7,9 @@ import { DashboardView } from "@/components/app/dashboard-view";
 import { JobStatusPanel } from "@/components/app/job-status";
 import { Uploader } from "@/components/app/uploader";
 import { AuthForm } from "@/components/auth/auth-form";
+import { RequestResetForm } from "@/components/auth/password-reset";
+import { normalizeCode, VerifyEmailForm } from "@/components/auth/verify-email";
+import { EmailNotVerifiedError } from "@/lib/auth/types";
 import { StatusBadge } from "@/components/status-badge";
 import type { Job, Page, Project, Usage } from "@/lib/types";
 import { fakeAuthClient, mockFetch, renderWithProviders } from "@/test/utils";
@@ -22,13 +25,14 @@ vi.mock("next/navigation", () => ({
 
 const usage: Usage = {
   plan: {
-    code: "free", name: "Free", description: "", monthly_source_minutes: 60, monthly_render_minutes: 30,
+    code: "free", name: "Free", description: "", monthly_source_minutes: 60, monthly_render_minutes: 30, monthly_ai_minutes: 30,
     max_upload_bytes: 1024, max_video_duration_seconds: 1800, max_projects: 10, watermark: true,
     priority_processing: false, team_workspace: false, checkout_available: false,
   },
   period_start: "2026-10-01T00:00:00Z", period_end: "2026-11-01T00:00:00Z",
   source_minutes_used: 12, source_minutes_limit: 60, source_minutes_remaining: 48,
   render_minutes_used: 3, render_minutes_reserved: 0, render_minutes_limit: 30, render_minutes_remaining: 27,
+  ai_minutes_used: 0, ai_minutes_limit: 30, ai_minutes_remaining: 30,
   policy: [],
 };
 
@@ -139,17 +143,23 @@ describe("JobStatusPanel", () => {
 
 describe("Uploader", () => {
   it("rejects unsupported files without calling the API", async () => {
-    const fetch = mockFetch({ "GET /api/v1/usage": () => ({ json: usage }) });
+    const fetch = mockFetch({
+      "GET /api/v1/usage": () => ({ json: usage }),
+      "GET /api/v1/system/status": () => ({ json: { ai_available: false } }),
+    });
     renderWithProviders(<Uploader />);
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     const input = screen.getByTestId("file-input");
     await userEvent.upload(input, new File(["hello"], "notes.txt", { type: "text/plain" }), { applyAccept: false });
     expect(await screen.findByText(/Unsupported file type/)).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2); // no project was created
   });
 
   it("enforces the plan's upload size limit", async () => {
-    mockFetch({ "GET /api/v1/usage": () => ({ json: usage }) });
+    mockFetch({
+      "GET /api/v1/usage": () => ({ json: usage }),
+      "GET /api/v1/system/status": () => ({ json: { ai_available: false } }),
+    });
     renderWithProviders(<Uploader />);
     expect(await screen.findByText(/up to 1.0 KB/)).toBeInTheDocument();
     await userEvent.upload(screen.getByTestId("file-input"), new File([new Uint8Array(4096)], "big.mp4", { type: "video/mp4" }));
@@ -199,5 +209,128 @@ describe("DashboardView", () => {
     expect(screen.getByText(/3 clips/)).toBeInTheDocument();
     expect(screen.getByText("2:05")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Podcast 12/ })).toHaveAttribute("href", "/projects/p1");
+  });
+});
+
+function supabaseLikeClient() {
+  const client = fakeAuthClient(null);
+  return Object.assign(client, { mode: "supabase" as const, requiresEmailVerification: true, supportsPasswordReset: true });
+}
+
+describe("email verification", () => {
+  it("sends new sign-ups to the code screen", async () => {
+    const client = supabaseLikeClient();
+    client.signUp = vi.fn(async () => ({ needsEmailConfirmation: true }));
+    renderWithProviders(<AuthForm mode="register" />, client);
+    await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
+    await userEvent.type(screen.getByLabelText("Password"), "correct-horse");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/verify-email?email=ada%40example.com"));
+  });
+
+  it("resends a code when an unverified user signs in", async () => {
+    const client = supabaseLikeClient();
+    client.signIn = vi.fn(async () => {
+      throw new EmailNotVerifiedError();
+    });
+    renderWithProviders(<AuthForm mode="login" />, client);
+    await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
+    await userEvent.type(screen.getByLabelText("Password"), "correct-horse");
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(client.resendSignupCode).toHaveBeenCalledWith("ada@example.com"));
+    expect(router.push).toHaveBeenCalledWith("/verify-email?email=ada%40example.com&resent=1");
+  });
+
+  it("verifies the code and continues to onboarding", async () => {
+    searchParams = new URLSearchParams({ email: "ada@example.com" });
+    const client = supabaseLikeClient();
+    renderWithProviders(<VerifyEmailForm />, client);
+    await userEvent.type(screen.getByLabelText("Verification code"), "12 34-56");
+    await userEvent.click(screen.getByRole("button", { name: "Verify email" }));
+    await waitFor(() => expect(client.verifySignupCode).toHaveBeenCalledWith("ada@example.com", "123456"));
+    expect(router.replace).toHaveBeenCalledWith("/onboarding");
+  });
+
+  it("shows invalid-code errors and rate-limits resends", async () => {
+    searchParams = new URLSearchParams({ email: "ada@example.com" });
+    const client = supabaseLikeClient();
+    client.verifySignupCode = vi.fn(async () => {
+      throw new Error("That code is invalid or has expired. Request a new one.");
+    });
+    renderWithProviders(<VerifyEmailForm />, client);
+    await userEvent.type(screen.getByLabelText("Verification code"), "000000");
+    await userEvent.click(screen.getByRole("button", { name: "Verify email" }));
+    expect(await screen.findByText(/invalid or has expired/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Resend code" }));
+    expect(client.resendSignupCode).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("button", { name: /Resend code in/ })).toBeDisabled();
+  });
+
+  it("explains when verification is not enabled (local dev auth)", () => {
+    renderWithProviders(<VerifyEmailForm />, fakeAuthClient(null));
+    expect(screen.getByText("Email verification is not enabled")).toBeInTheDocument();
+  });
+
+  it("normalizes pasted codes", () => {
+    expect(normalizeCode(" 123-456 ")).toBe("123456");
+    expect(normalizeCode("12345678901234")).toBe("1234567890");
+  });
+
+  it("resets a password with an emailed code", async () => {
+    const client = supabaseLikeClient();
+    renderWithProviders(<RequestResetForm />, client);
+    await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Send reset code" }));
+    await waitFor(() => expect(client.requestPasswordReset).toHaveBeenCalledWith("ada@example.com"));
+    await userEvent.type(await screen.findByLabelText("Reset code"), "654321");
+    await userEvent.type(screen.getByLabelText("New password"), "new-password-1");
+    await userEvent.type(screen.getByLabelText("Confirm password"), "new-password-1");
+    await userEvent.click(screen.getByRole("button", { name: "Reset password" }));
+    await waitFor(() => expect(client.verifyRecoveryCode).toHaveBeenCalledWith("ada@example.com", "654321"));
+    expect(client.updatePassword).toHaveBeenCalledWith("new-password-1");
+    expect(router.replace).toHaveBeenCalledWith("/dashboard");
+  });
+});
+
+describe("AI shorts", () => {
+  it("offers 30s / 1 min AI shorts on upload when the server has AI", async () => {
+    mockFetch({
+      "GET /api/v1/usage": () => ({ json: usage }),
+      "GET /api/v1/system/status": () => ({ json: { ai_available: true } }),
+    });
+    renderWithProviders(<Uploader />);
+    const thirty = await screen.findByRole("radio", { name: "30 seconds" });
+    expect(thirty).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(screen.getByRole("radio", { name: "1 minute" }));
+    expect(screen.getByRole("radio", { name: "1 minute" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("hides the AI option when the server has no AI configured", async () => {
+    const fetch = mockFetch({
+      "GET /api/v1/usage": () => ({ json: usage }),
+      "GET /api/v1/system/status": () => ({ json: { ai_available: false } }),
+    });
+    renderWithProviders(<Uploader />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("radiogroup", { name: "AI shorts" })).not.toBeInTheDocument();
+  });
+
+  it("starts AI analysis with the chosen options", async () => {
+    const { AiShortsCard } = await import("@/components/app/ai-panels");
+    let sent: unknown = null;
+    mockFetch({
+      "POST /api/v1/projects/p1/analyze": (body) => {
+        sent = body;
+        return { json: { id: "j1", status: "queued" } };
+      },
+    });
+    const project = { id: "p1", status: "ready" } as unknown as Project;
+    renderWithProviders(<AiShortsCard project={project} aiAvailable />);
+    await userEvent.click(screen.getByRole("button", { name: "1 minute" }));
+    await userEvent.click(screen.getByRole("button", { name: "2" }));
+    await userEvent.click(screen.getByRole("button", { name: /Find viral moments/ }));
+    await waitFor(() =>
+      expect(sent).toEqual({ target_seconds: 60, count: 2, captions: true, auto_render: true, instructions: null }),
+    );
   });
 });

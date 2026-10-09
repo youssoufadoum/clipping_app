@@ -25,6 +25,7 @@ export class LocalAuthClient implements AuthClient {
   readonly mode = "local" as const;
   readonly supportsPasswordReset = false;
   readonly supportsOAuth = false;
+  readonly requiresEmailVerification = false;
   private listeners = new Set<(user: AuthUser | null) => void>();
 
   private read(): StoredSession | null {
@@ -85,6 +86,18 @@ export class LocalAuthClient implements AuthClient {
 
   async updatePassword(): Promise<void> {
     throw new Error("Password changes are not available in local development mode.");
+  }
+
+  async verifySignupCode(): Promise<void> {
+    throw new Error("Email verification requires Supabase Auth.");
+  }
+
+  async resendSignupCode(): Promise<void> {
+    throw new Error("Email verification requires Supabase Auth.");
+  }
+
+  async verifyRecoveryCode(): Promise<void> {
+    throw new Error("Password reset requires Supabase Auth.");
   }
 
   onChange(listener: (user: AuthUser | null) => void): () => void {

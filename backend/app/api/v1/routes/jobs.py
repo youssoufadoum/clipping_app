@@ -4,13 +4,25 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user, rate_limit
-from app.core.errors import Conflict, ServiceUnavailable, ValidationFailed
+from app.core.config import get_settings
+from app.core.errors import Conflict, QuotaExceeded, ServiceUnavailable, ValidationFailed
 from app.db.session import get_db
-from app.models import Clip, ClipStatus, JobStatus, JobType, ProcessingJob, Profile, ProjectStatus
-from app.schemas import JobOut
+from app.models import (
+    Clip,
+    ClipStatus,
+    JobStatus,
+    JobType,
+    ProcessingJob,
+    Profile,
+    ProjectStatus,
+    Transcript,
+)
+from app.schemas import AnalyzeRequest, JobOut
+from app.services import usage
 from app.services.access import get_job, get_project
 from app.services.jobs import active_jobs, create_job, dispatch, transition_job, transition_project
 
@@ -67,6 +79,11 @@ def _retry(db: Session, user: Profile, job: ProcessingJob) -> ProcessingJob:
             raise Conflict("This project cannot be re-inspected right now.")
         else:
             raise Conflict("This video was already processed successfully.")
+    elif job.job_type == JobType.generate_shorts:
+        if active_jobs(db, project.id, JobType.generate_shorts):
+            raise Conflict("AI is already working on this video.")
+        if project.status != ProjectStatus.ready:
+            raise Conflict("The video must be ready before AI can run again.")
     elif job.job_type == JobType.render_clip:
         if not job.clip_id or db.get(Clip, job.clip_id) is None:
             raise Conflict("The clip for this job no longer exists.")
@@ -135,14 +152,43 @@ def create_project_job(
 @router.post(
     "/projects/{project_id}/analyze",
     response_model=JobOut,
-    responses={503: {"description": "AI analysis is not available yet"}},
+    dependencies=[Depends(rate_limit("ai-analyze", 20, 3600))],
+    responses={503: {"description": "AI is not configured on this server"}},
 )
 def analyze_project(
-    project_id: uuid.UUID, user: Profile = Depends(current_user), db: Session = Depends(get_db)
+    project_id: uuid.UUID,
+    body: AnalyzeRequest,
+    user: Profile = Depends(current_user),
+    db: Session = Depends(get_db),
 ) -> ProcessingJob:
-    get_project(db, user, project_id)
-    raise ServiceUnavailable(
-        "AI clip discovery is not available yet. Create clips manually by choosing start "
-        "and end times.",
-        code="FEATURE_UNAVAILABLE",
+    """Transcribe if needed, let the AI pick short-form moments, then create and render clips."""
+    if not get_settings().ai_configured:
+        raise ServiceUnavailable(
+            "AI clip generation is not configured on this server.", code="AI_NOT_CONFIGURED"
+        )
+    project = get_project(db, user, project_id, lock=True)
+    if project.status != ProjectStatus.ready or not project.source_duration_seconds:
+        raise Conflict("The video must finish processing before AI can find moments.")
+    if active_jobs(db, project.id, JobType.generate_shorts):
+        raise Conflict("AI is already working on this video.")
+    has_transcript = (
+        db.scalar(select(Transcript.id).where(Transcript.project_id == project.id)) is not None
     )
+    if not has_transcript:
+        summary = usage.summary(db, user)
+        needed = usage.minutes(project.source_duration_seconds)
+        if needed > summary.ai_minutes_remaining:
+            raise QuotaExceeded(
+                f"This video needs {needed:.1f} AI minutes; "
+                f"{summary.ai_minutes_remaining:.1f} remain this month."
+            )
+    job = create_job(
+        db,
+        project=project,
+        job_type=JobType.generate_shorts,
+        requested_by=user.id,
+        params=body.model_dump(),
+    )
+    db.commit()
+    dispatch(job)
+    return job

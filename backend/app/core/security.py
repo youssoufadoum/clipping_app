@@ -125,6 +125,12 @@ def verify_access_token(token: str, settings: Settings | None = None) -> Identit
     else:
         claims = verify_supabase_token(token, settings)
         provider = "supabase"
+    if provider == "supabase" and settings.require_email_verified:
+        meta = claims.get("user_metadata") or {}
+        if meta.get("email_verified") is False:
+            raise Unauthorized(
+                "Please verify your email address to continue.", code="EMAIL_NOT_VERIFIED"
+            )
     try:
         user_id = uuid.UUID(str(claims["sub"]))
     except (KeyError, ValueError) as exc:

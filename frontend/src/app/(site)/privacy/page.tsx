@@ -27,9 +27,9 @@ export default function PrivacyPage() {
         </p>
         <h2>Processing by third parties</h2>
         <p>
-          Authentication is provided by Supabase. Media is kept in private object storage. When AI features such as transcription are
-          enabled, the audio or text needed for your request is sent to the configured AI provider (for example OpenAI) through its API
-          solely to fulfil that request. Payment details, when billing is enabled, are handled by Stripe and never touch our servers.
+          Authentication, including email verification codes, is provided by Supabase. Media is kept in private object storage. When
+          you use AI shorts, your video&apos;s audio and its transcript are sent to Google&apos;s Gemini API solely to transcribe the
+          video and pick moments for you. Payment details, when billing is enabled, are handled by Stripe and never touch our servers.
         </p>
         <h2>Storage and security</h2>
         <p>

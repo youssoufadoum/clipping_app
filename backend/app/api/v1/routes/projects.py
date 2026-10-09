@@ -324,6 +324,12 @@ def complete_upload(
     project.processing_settings = {
         k: v for k, v in project.processing_settings.items() if k != "pending_upload"
     }
+    if body.auto_shorts is not None and get_settings().ai_configured:
+        # Picked up by the worker once inspection succeeds.
+        project.processing_settings = {
+            **project.processing_settings,
+            "auto_shorts": body.auto_shorts.model_dump(),
+        }
     db.add(
         MediaAsset(
             project_id=project.id,

@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { FieldError, Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth/provider";
+import { EmailNotVerifiedError } from "@/lib/auth/types";
 import { safeNext } from "@/lib/redirect";
 
 export const credentialsSchema = z.object({
@@ -27,7 +28,6 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
   const [serverError, setServerError] = useState<string | null>(null);
-  const [checkEmail, setCheckEmail] = useState(false);
   const form = useForm<Credentials>({ resolver: zodResolver(credentialsSchema), defaultValues: { email: "", password: "" } });
   const { errors, isSubmitting } = form.formState;
 
@@ -39,21 +39,19 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         router.replace(next);
       } else {
         const res = await client.signUp(email, password);
-        if (res.needsEmailConfirmation) setCheckEmail(true);
+        if (res.needsEmailConfirmation) router.push(`/verify-email?email=${encodeURIComponent(email)}`);
         else router.replace("/onboarding");
       }
     } catch (err) {
+      if (err instanceof EmailNotVerifiedError) {
+        // Send a fresh code and take the user to the verification screen.
+        await client.resendSignupCode(email).catch(() => {});
+        router.push(`/verify-email?email=${encodeURIComponent(email)}&resent=1`);
+        return;
+      }
       setServerError(errorMessage(err));
     }
   });
-
-  if (checkEmail) {
-    return (
-      <Alert variant="success" title="Check your inbox">
-        We sent a confirmation link to {form.getValues("email")}. Open it to activate your account, then sign in.
-      </Alert>
-    );
-  }
 
   return (
     <div className="space-y-6">

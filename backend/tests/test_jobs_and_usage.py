@@ -262,8 +262,8 @@ def test_stale_running_job_recovered(
 
 def test_unavailable_features_are_explicit(client: TestClient, auth: dict[str, str]) -> None:
     pid = client.post("/api/v1/projects", json={"title": "x"}, headers=auth).json()["id"]
-    resp = client.post(f"/api/v1/projects/{pid}/analyze", headers=auth)
-    assert resp.status_code == 503 and resp.json()["error"]["code"] == "FEATURE_UNAVAILABLE"
+    resp = client.post(f"/api/v1/projects/{pid}/analyze", headers=auth, json={})
+    assert resp.status_code == 503 and resp.json()["error"]["code"] == "AI_NOT_CONFIGURED"
     resp = client.post("/api/v1/billing/checkout", headers=auth)
     assert resp.status_code == 503 and resp.json()["error"]["code"] == "BILLING_UNAVAILABLE"
     plans = client.get("/api/v1/billing/plans").json()

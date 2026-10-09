@@ -19,6 +19,7 @@ class Plan:
     description: str
     monthly_source_minutes: int
     monthly_render_minutes: int
+    monthly_ai_minutes: int
     max_upload_bytes: int
     max_video_duration_seconds: int
     max_projects: int
@@ -37,6 +38,7 @@ PLANS: dict[str, Plan] = {
         description="Try the full workflow on short videos. Exports carry a small watermark.",
         monthly_source_minutes=60,
         monthly_render_minutes=30,
+        monthly_ai_minutes=30,
         max_upload_bytes=2 * GB,
         max_video_duration_seconds=30 * 60,
         max_projects=10,
@@ -50,6 +52,7 @@ PLANS: dict[str, Plan] = {
         description="For individual creators publishing every week.",
         monthly_source_minutes=600,
         monthly_render_minutes=300,
+        monthly_ai_minutes=600,
         max_upload_bytes=5 * GB,
         max_video_duration_seconds=2 * 60 * 60,
         max_projects=200,
@@ -63,6 +66,7 @@ PLANS: dict[str, Plan] = {
         description="Higher limits and priority processing for heavy publishers.",
         monthly_source_minutes=1800,
         monthly_render_minutes=900,
+        monthly_ai_minutes=1800,
         max_upload_bytes=10 * GB,
         max_video_duration_seconds=4 * 60 * 60,
         max_projects=1000,
@@ -76,6 +80,7 @@ PLANS: dict[str, Plan] = {
         description="Shared workspace and centralized billing for teams and agencies.",
         monthly_source_minutes=6000,
         monthly_render_minutes=3000,
+        monthly_ai_minutes=6000,
         max_upload_bytes=10 * GB,
         max_video_duration_seconds=4 * 60 * 60,
         max_projects=5000,

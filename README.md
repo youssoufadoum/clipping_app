@@ -46,15 +46,27 @@ and the app labels it "In development" or returns an explicit
 - [x] Exports history, usage page with the charging policy, billing page (plan limits; checkout honestly unavailable)
 - [x] Health (`/health`), readiness (`/ready`), token-protected metrics (`/metrics`), structured JSON logs with
       correlation IDs and secret redaction, optional Sentry
-- [x] Tests: 80 backend (real Postgres + FFmpeg), 27 frontend (Vitest/Testing Library), plus a Playwright browser E2E run
+- [x] Tests: 98 backend (real Postgres + FFmpeg; AI via mocked HTTP and a fake provider), 37 frontend
+      (Vitest/Testing Library), plus Playwright browser E2E runs
 - [x] Dockerfiles (API, worker, web), docker-compose, CI workflow, `.env.example` files
 
-### Phase 2 — AI clipping (next)
-- [ ] `TranscriptionProvider` with an OpenAI speech-to-text implementation (word timestamps where supported)
-- [ ] Transcript storage/editor (`transcripts` table exists), language detection/selection
-- [ ] `ClipAnalysisProvider` (OpenAI / Gemini) with structured, validated JSON; timestamp validation against media duration
-- [ ] Candidate ranking with transparent heuristic scores and near-duplicate suppression; analysis settings UI
-- [ ] Caption segmentation, caption styles, burn-in (the render pipeline already accepts a subtitles file), SRT/VTT export
+### Phase 2 — AI shorts ✅ (needs `GEMINI_API_KEY`)
+- [x] One-click **AI shorts**: choose 30 seconds or 1 minute at upload (or later on the project page)
+- [x] Google Gemini provider (REST, server-side key) for transcription and moment picking, with structured JSON output,
+      retries/backoff, safe error mapping (bad key, rate limit, blocked, malformed output)
+- [x] Chunked transcription (10-minute audio chunks extracted with FFmpeg) so long videos fit model limits
+- [x] The model picks **segment ranges**, so clips always start/end on real sentence boundaries; durations are fitted to the
+      target, validated against the media, ranked, and near-duplicates are dropped
+- [x] AI clips store title, reason and an engagement *estimate* (labeled as not a guarantee); optional creator instructions
+- [x] Editable transcript; captions burned into renders (lower third or center) and SRT/VTT downloads
+- [x] AI minutes quota and usage ledger; failed AI jobs are not charged and leave the project usable
+- [ ] Word-level timestamps (Gemini returns phrase-level timing; caption timing within a phrase is approximated)
+- [ ] YouTube / URL import — deliberately not built (YouTube's Terms of Service forbid downloading; see below)
+
+### Accounts — real email verification ✅ (needs Supabase)
+- [x] Sign-up requires a **6-digit code emailed by Supabase**; unverified sign-ins get a fresh code and the code screen
+- [x] Resend with cooldown; password reset by emailed code; the API rejects tokens whose email isn't verified
+- [x] The user's verified email is stored on their profile from the verified token
 
 ### Phase 3 — editing & SaaS
 - [ ] Stripe checkout, portal and verified idempotent webhooks (`subscriptions`, `webhook_events` tables exist)
@@ -135,9 +147,11 @@ npm run dev                     # http://localhost:3000
 
 ### Docker Compose (alternative)
 ```bash
+cp .env.example .env      # optional: add Supabase and Gemini keys
 docker compose up --build
 ```
-Runs Postgres, Redis, API (migrates on start), worker, beat and web with local auth and a shared media volume.
+Runs Postgres, Redis, API (migrates on start), worker, beat and web with a shared media volume. Without keys it uses
+the dev-only local sign-in and AI is off.
 
 ### Changing a user's plan (until Stripe ships)
 ```bash
@@ -151,7 +165,39 @@ cd backend && uv run python -m app.cli set-plan user@example.com creator
 All secrets come from environment variables. See `backend/.env.example` and `frontend/.env.example`; both contain
 placeholders only. Never commit populated `.env` files (they are git-ignored).
 
-### Supabase
+### Real accounts with email verification codes (Supabase)
+Without Supabase the app uses a development-only sign-in that accepts any email and sends nothing. To require
+real, verified emails:
+
+1. Create a free project at https://supabase.com.
+2. **Authentication → Sign In / Providers → Email:** turn on **Confirm email**.
+3. **Authentication → Emails → Templates:** edit **Confirm signup** so the email shows the code, e.g.
+   `<p>Your Virello Studio verification code is <strong>{{ .Token }}</strong></p>`.
+   Do the same for **Reset Password** (`{{ .Token }}`). The app's code screens use these codes.
+4. **Authentication → Emails → SMTP Settings:** add your own SMTP server. Supabase's built-in sender only delivers
+   to your project's team members and is heavily rate-limited, so real users won't get codes without this.
+   Any SMTP provider works (for example Resend: host `smtp.resend.com`, port `465`, user `resend`,
+   password = your Resend API key, with a verified sending domain).
+5. **Authentication → URL Configuration:** set the Site URL to your frontend (e.g. `http://localhost:3000`) and add
+   `http://localhost:3000/auth/callback` to the redirect URLs.
+6. **Project Settings → API Keys:** copy the project URL, the anon/publishable key and the service_role/secret key.
+   With Docker Compose, put them in the root `.env` (see `.env.example`) with `AUTH_MODE=supabase`, then rebuild:
+   `docker compose up --build`.
+
+### AI shorts (Google Gemini)
+1. Create an API key at https://aistudio.google.com/apikey.
+2. Set `GEMINI_API_KEY` (root `.env` for Docker Compose, or `backend/.env`). Optional: `GEMINI_MODEL`
+   (default `gemini-2.5-flash`).
+3. Restart. The dashboard then shows **AI shorts: Off / 30 seconds / 1 minute**.
+
+The video's audio (and then its transcript) is sent to Google's Gemini API under Google's API terms. Each video is
+transcribed once; re-running AI reuses the saved transcript.
+
+**Why there's no YouTube link import:** YouTube's Terms of Service don't allow third-party downloading, there's no
+official download API, and YouTube actively blocks downloads from cloud servers. Uploading a file you have rights
+to is the supported path. (Creators can download their own videos from YouTube Studio.)
+
+### Supabase (details)
 1. Create a project. In **Project Settings → API**, copy the URL and anon key into `NEXT_PUBLIC_SUPABASE_URL` /
    `NEXT_PUBLIC_SUPABASE_ANON_KEY` (frontend) and `SUPABASE_URL` / `SUPABASE_ANON_KEY` (backend). Put the
    service-role key in `SUPABASE_SERVICE_ROLE_KEY` (**backend only**; used to delete auth users on account deletion).
@@ -181,8 +227,8 @@ placeholders only. Never commit populated `.env` files (they are git-ignored).
 filesystem (one machine, or the Compose volume). Don't use it for multi-node production.
 
 ### Not yet used
-`OPENAI_*`, `GEMINI_API_KEY`, `STRIPE_*`, `RESEND_API_KEY` and `EMAIL_FROM` are reserved for phases 2–3. Setting them
-has no effect today. `MEDIA_RETENTION_DAYS` is not enforced yet.
+`OPENAI_*`, `STRIPE_*`, `RESEND_API_KEY` and `EMAIL_FROM` are reserved for later phases (verification emails are sent
+by Supabase, not the backend). Setting them has no effect today. `MEDIA_RETENTION_DAYS` is not enforced yet.
 
 ---
 

@@ -3,7 +3,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useToast } from "@/components/ui/toast";
-import { api, errorMessage } from "@/lib/api";
+import { api, errorMessage, getApiToken } from "@/lib/api";
+import { config } from "@/lib/config";
 import { keys } from "@/lib/queries";
 import type { Clip, Job, SignedUrl } from "@/lib/types";
 
@@ -59,4 +60,22 @@ export async function downloadClip(clipId: string): Promise<void> {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+/** Subtitle files need the auth header, so fetch them and save via a blob URL. */
+export async function downloadSubtitles(clipId: string, format: "srt" | "vtt"): Promise<void> {
+  const token = await getApiToken();
+  const res = await fetch(`${config.apiBaseUrl}/api/v1/clips/${clipId}/subtitles?format=${format}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(res.status === 404 ? "No transcript is available for this clip." : "Subtitles could not be downloaded.");
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? `captions.${format}`;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

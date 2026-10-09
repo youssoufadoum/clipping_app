@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""  # legacy HS256 projects only
     supabase_jwt_audience: str = "authenticated"
     admin_emails: str = ""  # comma separated list of administrator emails
+    # Reject Supabase tokens whose email is not verified (defense in depth).
+    require_email_verified: bool = True
 
     # --- Storage ----------------------------------------------------------
     storage_backend: Literal["s3", "local"] = "s3"
@@ -68,6 +70,10 @@ class Settings(BaseSettings):
     openai_transcription_model: str = ""
     openai_analysis_model: str = ""
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_timeout_seconds: int = 300
+    # Audio is transcribed in chunks so long videos stay within model output limits.
+    transcription_chunk_seconds: int = 600
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     resend_api_key: str = ""
@@ -93,6 +99,10 @@ class Settings(BaseSettings):
         if self.app_env in ("development", "test"):
             return "insecure-development-secret-change-me-0123456789"
         raise RuntimeError("API_SECRET_KEY is not configured")
+
+    @property
+    def ai_configured(self) -> bool:
+        return bool(self.gemini_api_key)
 
     @property
     def cors_origin_list(self) -> list[str]:

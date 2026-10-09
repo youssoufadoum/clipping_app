@@ -13,6 +13,7 @@ import { useUsage, useUsageHistory } from "@/lib/queries";
 const EVENT_LABELS: Record<string, string> = {
   source_processed: "Video processed",
   clip_rendered: "Clip exported",
+  ai_transcription: "AI transcription",
 };
 
 function Meter({ label, used, reserved = 0, limit }: { label: string; used: number; reserved?: number; limit: number }) {
@@ -66,6 +67,7 @@ export function UsageView() {
                   reserved={usage.data.render_minutes_reserved}
                   limit={usage.data.render_minutes_limit}
                 />
+                <Meter label="AI minutes" used={usage.data.ai_minutes_used} limit={usage.data.ai_minutes_limit} />
               </CardContent>
             </Card>
           )}
@@ -91,7 +93,7 @@ export function UsageView() {
                           <span className="block text-xs text-muted">{formatDateTime(e.created_at)}</span>
                         </span>
                         <span className="font-mono">
-                          {e.quantity.toFixed(1)} {e.unit === "source_minutes" ? "source min" : "export min"}
+                          {e.quantity.toFixed(1)} {e.unit === "source_minutes" ? "source min" : e.unit === "ai_minutes" ? "AI min" : "export min"}
                         </span>
                       </li>
                     ))}

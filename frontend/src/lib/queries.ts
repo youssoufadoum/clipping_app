@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { ACTIVE_STATUSES } from "@/components/status-badge";
 import { api } from "@/lib/api";
-import type { Clip, Job, MediaAsset, Page, Profile, Project, Usage, UsageEvent } from "@/lib/types";
+import type { Clip, Job, MediaAsset, Page, Profile, Project, SystemStatus, Transcript, Usage, UsageEvent } from "@/lib/types";
 
 export const keys = {
   me: ["me"] as const,
@@ -16,7 +16,27 @@ export const keys = {
   clip: (id: string) => ["clip", id] as const,
   jobs: (projectId: string) => ["jobs", projectId] as const,
   exports: (page: number) => ["exports", page] as const,
+  transcript: (projectId: string) => ["transcript", projectId] as const,
+  system: ["system-status"] as const,
 };
+
+/** Which optional features (like AI) this server has configured. */
+export function useSystemStatus() {
+  return useQuery({
+    queryKey: keys.system,
+    queryFn: () => api<SystemStatus>("/api/v1/system/status", { auth: false }),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useTranscript(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.transcript(projectId),
+    queryFn: () => api<Transcript>(`/api/v1/projects/${projectId}/transcript`),
+    enabled,
+    retry: false,
+  });
+}
 
 /** Poll only while real work is in progress; the interval reflects job state, not a timer-driven fake. */
 const POLL_MS = 2000;

@@ -36,6 +36,9 @@ MIN_CLIP_SECONDS = 1.0
 MAX_CLIP_SECONDS = 10 * 60.0
 CLIP_READY_STATUSES = {
     ProjectStatus.ready,
+    ProjectStatus.transcribing,
+    ProjectStatus.analyzing,
+    ProjectStatus.generating,
     ProjectStatus.completed,
     ProjectStatus.partially_failed,
     ProjectStatus.rendering,

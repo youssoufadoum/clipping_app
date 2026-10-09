@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, Pause, Play, Redo2, Repeat, Save, Undo2 } from "lucide-react";
+import { ArrowLeft, Download, Pause, Play, Redo2, Repeat, Save, Sparkles, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -17,8 +17,8 @@ import { useToast } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import { cropBox, round1, sameState, validateRange, type EditorState } from "@/lib/editor";
 import { formatDuration, formatTimecode, parseTimecode } from "@/lib/format";
-import { downloadClip } from "@/lib/mutations";
-import { keys, useClip, useProject } from "@/lib/queries";
+import { downloadClip, downloadSubtitles } from "@/lib/mutations";
+import { keys, useClip, useProject, useTranscript } from "@/lib/queries";
 import type { AspectRatio, Clip, Job, Project, SignedUrl } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +30,9 @@ const RATIO_OPTIONS: { value: AspectRatio; label: string; hint: string }[] = [
 ];
 
 function toState(clip: Clip): EditorState {
-  return { title: clip.title, start: clip.start_seconds, end: clip.end_seconds, render: { ...clip.render_settings } };
+  // Fill defaults so clips saved before captions existed compare equal after a round trip.
+  const render = { captions: false, caption_position: "lower" as const, ...clip.render_settings };
+  return { title: clip.title, start: clip.start_seconds, end: clip.end_seconds, render };
 }
 
 interface HistoryState {
@@ -160,6 +162,8 @@ function EditorBody({ project, clip }: { project: Project; clip: Clip }) {
   const [videoError, setVideoError] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
+  const transcript = useTranscript(project.id);
+  const hasTranscript = Boolean(transcript.data?.segments.length);
   const duration = project.source_duration_seconds ?? 0;
   const sw = project.source_width ?? 16;
   const sh = project.source_height ?? 9;
@@ -518,6 +522,69 @@ function EditorBody({ project, clip }: { project: Project; clip: Clip }) {
               <span className="block text-xs text-muted">Evens out volume to a consistent level (EBU R128).</span>
             </span>
           </label>
+
+          <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
+            {hasTranscript ? (
+              <>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-[var(--accent)]"
+                    checked={Boolean(state.render.captions)}
+                    onChange={(e) => renderSettings({ captions: e.target.checked })}
+                  />
+                  <span>
+                    Burn in captions
+                    <span className="block text-xs text-muted">From the transcript; timing is approximate within each phrase.</span>
+                  </span>
+                </label>
+                {state.render.captions && (
+                  <div className="flex gap-2 pl-6">
+                    {(["lower", "middle"] as const).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        aria-pressed={(state.render.caption_position ?? "lower") === pos}
+                        onClick={() => renderSettings({ caption_position: pos })}
+                        className={cn(
+                          "rounded-md border px-2.5 py-1 text-xs",
+                          (state.render.caption_position ?? "lower") === pos ? "border-accent bg-accent-soft" : "border-border",
+                        )}
+                      >
+                        {pos === "lower" ? "Lower third" : "Center"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-3 pl-6 text-xs">
+                  {(["srt", "vtt"] as const).map((fmt) => (
+                    <button
+                      key={fmt}
+                      type="button"
+                      className="text-accent hover:underline"
+                      onClick={() => downloadSubtitles(clip.id, fmt).catch((e) => toast(errorMessage(e), "error"))}
+                    >
+                      Download .{fmt}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted">
+                Captions need a transcript. Use <span className="text-fg">Make shorts with AI</span> on the project page to create one.
+              </p>
+            )}
+          </div>
+
+          {clip.origin === "ai" && clip.selection_reason && (
+            <div className="rounded-lg border border-accent/30 bg-accent-soft p-3 text-sm">
+              <p className="flex items-center gap-1.5 font-medium">
+                <Sparkles className="size-4 text-accent" aria-hidden /> Why AI picked this
+                {clip.engagement_score != null && <span className="ml-auto text-xs text-muted">Score {Math.round(clip.engagement_score)} · estimate</span>}
+              </p>
+              <p className="mt-1 text-muted">{clip.selection_reason}</p>
+            </div>
+          )}
 
           <div className="space-y-3 border-t border-border pt-5">
             <h2 className="text-sm font-medium">Export</h2>

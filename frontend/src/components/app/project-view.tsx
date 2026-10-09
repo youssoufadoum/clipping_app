@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, Copy, Download, Film, Pencil, Plus, Scissors, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Copy, Download, Film, Pencil, Plus, Scissors, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app/app-shell";
 import { ConfirmDialog } from "@/components/app/confirm-dialog";
+import { AiShortsCard, TranscriptPanel } from "@/components/app/ai-panels";
 import { JobStatusPanel } from "@/components/app/job-status";
 import { Uploader } from "@/components/app/uploader";
 import { StatusBadge } from "@/components/status-badge";
@@ -20,10 +21,10 @@ import { useToast } from "@/components/ui/toast";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { formatBytes, formatDateTime, formatDuration, formatTimecode, stageLabel } from "@/lib/format";
 import { downloadClip, useDeleteClip, useDuplicateClip, useRenderClip } from "@/lib/mutations";
-import { keys, useClips, useJobs, useProject } from "@/lib/queries";
+import { keys, useClips, useJobs, useProject, useSystemStatus } from "@/lib/queries";
 import type { Clip, Project } from "@/lib/types";
 
-const CLIP_READY = new Set(["ready", "completed", "partially_failed", "rendering"]);
+const CLIP_READY = new Set(["ready", "completed", "partially_failed", "rendering", "transcribing", "analyzing", "generating"]);
 
 function RenameDialog({ project }: { project: Project }) {
   const qc = useQueryClient();
@@ -128,7 +129,18 @@ function ClipRow({ clip, projectId }: { clip: Clip; projectId: string }) {
             {formatTimecode(clip.start_seconds)} – {formatTimecode(clip.end_seconds)} · {formatDuration(clip.duration_seconds)} ·{" "}
             {clip.render_settings.aspect_ratio}
           </p>
+          {clip.origin === "ai" && clip.selection_reason && (
+            <p className="line-clamp-2 text-xs text-muted">{clip.selection_reason}</p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
+            {clip.origin === "ai" && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent"
+                title="AI estimate of how engaging this moment is — not a guarantee of views"
+              >
+                <Sparkles className="size-3" aria-hidden /> AI pick{clip.engagement_score != null ? ` · ${Math.round(clip.engagement_score)}` : ""}
+              </span>
+            )}
             <StatusBadge status={clip.status} />
             {clip.status === "rendered" && !clip.render_is_current && <span className="text-xs text-warning">Edited since last render</span>}
             {clip.status === "failed" && job?.safe_error_message && <span className="text-xs text-danger">{job.safe_error_message}</span>}
@@ -255,7 +267,13 @@ function JobHistory({ projectId }: { projectId: string }) {
           {jobs.data.map((j) => (
             <li key={j.id} className="flex items-center justify-between gap-3 py-2">
               <span className="truncate">
-                {j.job_type === "inspect_media" ? "Video inspection" : j.job_type === "render_clip" ? "Clip render" : j.job_type}
+                {j.job_type === "inspect_media"
+                  ? "Video inspection"
+                  : j.job_type === "render_clip"
+                    ? "Clip render"
+                    : j.job_type === "generate_shorts"
+                      ? "AI shorts"
+                      : j.job_type}
                 <span className="block text-xs text-muted">{formatDateTime(j.created_at)}{j.error_code ? ` · ${j.error_code}` : ""}</span>
               </span>
               <StatusBadge status={j.status} />
@@ -273,10 +291,15 @@ export function ProjectView() {
   const qc = useQueryClient();
   const toast = useToast();
   const project = useProject(id);
+  const system = useSystemStatus();
+  const jobs = useJobs(id);
   const latestJobKey = project.data?.latest_job ? `${project.data.latest_job.id}:${project.data.latest_job.status}` : "";
   // Refresh job history whenever the latest job changes state.
   useEffect(() => {
-    if (latestJobKey) void qc.invalidateQueries({ queryKey: keys.jobs(id) });
+    if (!latestJobKey) return;
+    void qc.invalidateQueries({ queryKey: keys.jobs(id) });
+    void qc.invalidateQueries({ queryKey: keys.clips(id) });
+    void qc.invalidateQueries({ queryKey: keys.transcript(id) });
   }, [latestJobKey, id, qc]);
 
   const archive = useMutation({
@@ -309,6 +332,10 @@ export function ProjectView() {
   const p = project.data;
   const job = p.latest_job;
   const inspectJob = job?.job_type === "inspect_media" ? job : null;
+  // Renders queued by the AI job become the "latest" job, so also look in the history.
+  const aiJob =
+    job?.job_type === "generate_shorts" ? job : (jobs.data?.find((j) => j.job_type === "generate_shorts") ?? null);
+  const aiAvailable = system.data?.ai_available === true;
 
   return (
     <>
@@ -370,7 +397,18 @@ export function ProjectView() {
           {inspectJob && (inspectJob.status !== "succeeded" || p.status === "failed") && (
             <JobStatusPanel job={inspectJob} label="Video processing" invalidate={[keys.project(id), keys.jobs(id)]} />
           )}
+          {aiJob && aiJob.status !== "succeeded" && (
+            <JobStatusPanel job={aiJob} label="AI shorts" invalidate={[keys.project(id), keys.jobs(id), keys.clips(id)]} />
+          )}
+          {aiJob?.status === "succeeded" && (
+            <Alert variant="success" title="AI shorts are ready">
+              AI created {String(aiJob.params?.clips_created ?? "your")} clip{aiJob.params?.clips_created === 1 ? "" : "s"}
+              {aiJob.params?.renders_queued ? " and started rendering them" : ""}. Review them below.
+            </Alert>
+          )}
+          {CLIP_READY.has(p.status) && <AiShortsCard project={p} aiAvailable={aiAvailable} />}
           {CLIP_READY.has(p.status) && <ClipsSection project={p} />}
+          <TranscriptPanel projectId={p.id} enabled={aiAvailable && p.source_duration_seconds != null} />
           {p.status === "archived" && (
             <Alert variant="info" title="This project is archived">
               Restore it to create or render clips.

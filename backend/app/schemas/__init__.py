@@ -113,6 +113,7 @@ class JobOut(ORM):
     error_code: str | None
     safe_error_message: str | None
     cancel_requested: bool
+    params: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
@@ -159,8 +160,21 @@ class UploadTargetOut(BaseModel):
     max_bytes: int
 
 
+class AutoShorts(BaseModel):
+    target_seconds: Literal[30, 60] = 30
+    count: int = Field(default=3, ge=1, le=5)
+    captions: bool = True
+    auto_render: bool = True
+
+
+class AnalyzeRequest(AutoShorts):
+    instructions: str | None = Field(default=None, max_length=500)
+    language: str | None = Field(default=None, max_length=16, pattern=r"^[a-zA-Z-]{2,16}$")
+
+
 class UploadComplete(BaseModel):
     upload_id: uuid.UUID
+    auto_shorts: AutoShorts | None = None
 
 
 class UploadCompleteOut(BaseModel):
@@ -195,6 +209,8 @@ class RenderSettings(BaseModel):
     crop_y: float = Field(default=0.5, ge=0.0, le=1.0)
     pad_color: Literal["black", "white", "0x111827"] = "black"
     normalize_audio: bool = False
+    captions: bool = False
+    caption_position: Literal["lower", "middle"] = "lower"
 
 
 class ClipCreate(BaseModel):
@@ -237,6 +253,30 @@ class ClipOut(ORM):
     latest_job: JobOut | None = None
 
 
+class TranscriptSegmentOut(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class TranscriptOut(ORM):
+    project_id: uuid.UUID
+    language: str | None
+    provider: str | None
+    has_word_timestamps: bool
+    segments: list[TranscriptSegmentOut]
+    updated_at: datetime
+
+
+class TranscriptEdit(BaseModel):
+    index: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class TranscriptUpdate(BaseModel):
+    segments: list[TranscriptEdit] = Field(min_length=1, max_length=5000)
+
+
 class SignedUrlOut(BaseModel):
     url: str
     expires_in: int
@@ -252,6 +292,7 @@ class PlanOut(BaseModel):
     description: str
     monthly_source_minutes: int
     monthly_render_minutes: int
+    monthly_ai_minutes: int
     max_upload_bytes: int
     max_video_duration_seconds: int
     max_projects: int
@@ -272,6 +313,9 @@ class UsageOut(BaseModel):
     render_minutes_reserved: float
     render_minutes_limit: int
     render_minutes_remaining: float
+    ai_minutes_used: float
+    ai_minutes_limit: int
+    ai_minutes_remaining: float
     policy: list[str]
 
 

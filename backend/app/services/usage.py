@@ -25,6 +25,7 @@ from app.models import Clip, JobStatus, JobType, ProcessingJob, Profile, Project
 
 SOURCE_MINUTES = "source_minutes"
 RENDER_MINUTES = "render_minutes"
+AI_MINUTES = "ai_minutes"
 
 
 def period_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -78,10 +79,15 @@ class UsageSummary:
     source_minutes_used: float
     render_minutes_used: float
     render_minutes_reserved: float
+    ai_minutes_used: float = 0.0
 
     @property
     def source_minutes_remaining(self) -> float:
         return max(0.0, self.plan.monthly_source_minutes - self.source_minutes_used)
+
+    @property
+    def ai_minutes_remaining(self) -> float:
+        return max(0.0, self.plan.monthly_ai_minutes - self.ai_minutes_used)
 
     @property
     def render_minutes_remaining(self) -> float:
@@ -102,6 +108,7 @@ def summary(db: Session, user: Profile) -> UsageSummary:
         source_minutes_used=used(db, user.id, SOURCE_MINUTES),
         render_minutes_used=used(db, user.id, RENDER_MINUTES),
         render_minutes_reserved=reserved_render_minutes(db, user.id),
+        ai_minutes_used=used(db, user.id, AI_MINUTES),
     )
 
 

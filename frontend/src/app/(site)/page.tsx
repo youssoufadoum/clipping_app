@@ -13,15 +13,15 @@ export default function HomePage() {
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(60%_60%_at_50%_0%,rgba(109,74,255,0.14),transparent)]" />
         <Section className="relative pb-10 pt-16 text-center sm:pt-24">
           <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted">
-            <span className="size-1.5 rounded-full bg-accent" /> Upload, trim, reframe, export
+            <span className="size-1.5 rounded-full bg-accent" /> AI shorts with captions, in minutes
           </p>
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-semibold tracking-tight text-fg sm:text-6xl">
             Turn one long video into a week of content.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-muted">
             Virello Studio turns podcasts, webinars and interviews into short clips for TikTok, YouTube Shorts,
-            Reels and LinkedIn. Mark your moments, reframe for each platform, and export polished MP4s. AI clip
-            discovery and captions are on the way.
+            Reels and LinkedIn. Upload a video, pick 30 seconds or 1 minute, and AI finds the best moments and renders
+            captioned vertical shorts — or trim and reframe clips yourself.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Button asChild size="lg">

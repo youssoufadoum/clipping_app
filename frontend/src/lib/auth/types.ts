@@ -20,5 +20,18 @@ export interface AuthClient {
   signInWithGoogle(): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
+  /** True when sign-up requires confirming a code sent by email. */
+  readonly requiresEmailVerification: boolean;
+  verifySignupCode(email: string, code: string): Promise<void>;
+  resendSignupCode(email: string): Promise<void>;
+  verifyRecoveryCode(email: string, code: string): Promise<void>;
   onChange(listener: (user: AuthUser | null) => void): () => void;
+}
+
+/** Thrown by signIn when the account exists but the email has not been verified yet. */
+export class EmailNotVerifiedError extends Error {
+  constructor() {
+    super("Please verify your email address. We can send you a new code.");
+    this.name = "EmailNotVerifiedError";
+  }
 }

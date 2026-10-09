@@ -61,12 +61,14 @@ def delete_me(
         and settings.supabase_url
         and settings.supabase_service_role_key
     ):
+        key = settings.supabase_service_role_key
+        headers = {"apikey": key}
+        if not key.startswith("sb_"):
+            # Legacy service_role JWTs also go in Authorization; new sb_secret_ keys must not.
+            headers["Authorization"] = f"Bearer {key}"
         resp = httpx.delete(
             f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{user.id}",
-            headers={
-                "apikey": settings.supabase_service_role_key,
-                "Authorization": f"Bearer {settings.supabase_service_role_key}",
-            },
+            headers=headers,
             timeout=10,
         )
         if resp.status_code not in (200, 204, 404):

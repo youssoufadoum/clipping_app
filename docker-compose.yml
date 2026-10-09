@@ -1,6 +1,19 @@
-# Local full-stack environment. Uses the development auth provider and local
-# file storage shared between the API and worker through a volume.
-# For production use Supabase Auth and S3-compatible storage (see README).
+# Local full-stack environment with local file storage shared between the API
+# and worker through a volume.
+#
+# Optional keys go in a `.env` file next to this one (see .env.example):
+#   - SUPABASE_* + AUTH_MODE=supabase  -> real accounts with emailed verification codes
+#   - GEMINI_API_KEY                   -> AI shorts (transcription + moment picking)
+# Without them the app runs with dev-only local sign-in and no AI.
+
+x-backend-env: &backend-env
+  AUTH_MODE: ${AUTH_MODE:-local}
+  SUPABASE_URL: ${SUPABASE_URL:-}
+  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+  SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+  SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
 services:
   postgres:
     image: postgres:16-alpine
@@ -26,6 +39,7 @@ services:
   api:
     build: { context: ./backend, target: api }
     env_file: [./backend/.env.compose]
+    environment: *backend-env
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes: [media:/app/var]
     ports: ["8000:8000"]
@@ -36,12 +50,14 @@ services:
   worker:
     build: { context: ./backend, dockerfile: Dockerfile.worker }
     env_file: [./backend/.env.compose]
+    environment: *backend-env
     volumes: [media:/app/var]
     depends_on: [api]
 
   beat:
     build: { context: ./backend, dockerfile: Dockerfile.worker }
     env_file: [./backend/.env.compose]
+    environment: *backend-env
     command: celery -A app.worker.celery_app beat --loglevel INFO --schedule /tmp/celerybeat-schedule
     depends_on: [api]
 
@@ -50,7 +66,9 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
-        NEXT_PUBLIC_AUTH_MODE: local
+        NEXT_PUBLIC_AUTH_MODE: ${AUTH_MODE:-local}
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
     ports: ["3000:3000"]
     depends_on: [api]
 

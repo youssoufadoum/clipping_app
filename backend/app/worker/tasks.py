@@ -38,14 +38,17 @@ from app.models import (
     Profile,
     Project,
     ProjectStatus,
+    Transcript,
 )
 from app.services import usage
+from app.services.captions import Cue, build_cues, to_ass
 from app.services.jobs import dispatch, transition_job, transition_project
 from app.services.media.probe import probe, sniff_container
 from app.services.media.render import (
     RenderSpec,
     build_render_command,
     build_thumbnail_command,
+    compute_geometry,
     run_ffmpeg,
 )
 from app.services.storage import get_storage, project_prefix
@@ -313,8 +316,14 @@ def inspect_media_job(job_id: uuid.UUID) -> None:
             transition_project(project, ProjectStatus.ready)
             transition_job(job, JobStatus.succeeded)
             job.stage = "completed"
+            follow_up = _queue_auto_shorts(db, project)
             db.commit()
         log.info("inspection complete", extra={"job_id": job_id, "project_id": project_id})
+        if follow_up is not None:
+            try:
+                dispatch(follow_up)
+            except Exception:  # noqa: BLE001 - recovery sweep re-dispatches queued jobs
+                log.warning("auto shorts dispatch failed", extra={"job_id": follow_up.id})
     except Exception as exc:  # noqa: BLE001 - normalized in _handle_failure
 
         def _fail_project(db: Session, job: ProcessingJob) -> None:
@@ -385,6 +394,12 @@ def render_clip_job(job_id: uuid.UUID) -> None:
         clip.status = ClipStatus.rendering
         spec = spec_for(clip, project, watermark=get_plan(owner.plan_code).watermark)
         clip_hash = settings_hash(clip)
+        caption_cues: list[Cue] = []
+        caption_position = (clip.render_settings or {}).get("caption_position", "lower")
+        if (clip.render_settings or {}).get("captions"):
+            transcript = db.scalar(select(Transcript).where(Transcript.project_id == project.id))
+            if transcript is not None:
+                caption_cues = build_cues(transcript.segments, spec.start, spec.end)
         db.commit()
         source_key, owner_id, project_id, clip_id = (
             project.source_storage_key,
@@ -400,9 +415,16 @@ def render_clip_job(job_id: uuid.UUID) -> None:
         source_input = storage.ffmpeg_input(source_key, ttl=settings.ffmpeg_timeout_seconds + 600)
         with tempfile.TemporaryDirectory(dir=_work_dir()) as tmp:
             out = Path(tmp) / "clip.mp4"
+            subtitles: Path | None = None
+            if caption_cues:
+                geo = compute_geometry(spec)
+                subtitles = Path(tmp) / "captions.ass"
+                subtitles.write_text(
+                    to_ass(caption_cues, geo.out_w, geo.out_h, caption_position), encoding="utf-8"
+                )
             reporter.stage("rendering", 0.05)
             run_ffmpeg(
-                build_render_command(spec, source_input, out),
+                build_render_command(spec, source_input, out, subtitles),
                 duration=spec.duration,
                 timeout=settings.ffmpeg_timeout_seconds,
                 on_progress=reporter.progress("rendering", 0.05, 0.8),
@@ -584,3 +606,329 @@ def cleanup_work_dir(max_age_hours: int = 6) -> None:
     for child in root.iterdir():
         if child.stat().st_mtime < cutoff:
             shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink()
+
+
+# ---------------------------------------------------------------------------
+# AI shorts: transcribe -> pick moments -> create clips -> render
+# ---------------------------------------------------------------------------
+
+AI_PROJECT_STATES = (ProjectStatus.transcribing, ProjectStatus.analyzing, ProjectStatus.generating)
+
+
+def _queue_auto_shorts(db: Session, project: Project) -> ProcessingJob | None:
+    """Create the AI job requested at upload time (if AI is configured)."""
+    from app.services.jobs import create_job
+
+    wanted = (project.processing_settings or {}).get("auto_shorts")
+    if not wanted or not get_settings().ai_configured:
+        return None
+    settings = dict(project.processing_settings)
+    settings.pop("auto_shorts", None)  # one-shot request
+    project.processing_settings = settings
+    return create_job(
+        db,
+        project=project,
+        job_type="generate_shorts",
+        requested_by=project.owner_id,
+        params=dict(wanted),
+        idempotency_key=f"auto-shorts:{project.id}:{project.source_storage_key}",
+    )
+
+
+def _extract_audio(source_input: str, dest: Path, timeout: int) -> None:
+    run_ffmpeg(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            source_input,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "32k",
+            str(dest),
+        ],
+        timeout=timeout,
+    )
+
+
+def _audio_chunk(audio: Path, start: float, length: float, dest: Path) -> None:
+    run_ffmpeg(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-ss",
+            f"{start:.3f}",
+            "-i",
+            str(audio),
+            "-t",
+            f"{length:.3f}",
+            "-c",
+            "copy",
+            str(dest),
+        ],
+        timeout=300,
+    )
+
+
+def _set_project_status(project_id: uuid.UUID, status: str) -> None:
+    with _session() as db:
+        project = db.get(Project, project_id, with_for_update=True)
+        if project is not None and project.status != status:
+            transition_project(project, status)
+            db.commit()
+
+
+def generate_shorts_job(job_id: uuid.UUID) -> None:
+    from app.services.ai import get_ai_provider
+    from app.services.ai.clip_selection import validate_candidates
+    from app.services.ai.types import AnalysisRequest, TranscriptSegment
+
+    settings = get_settings()
+    storage = get_storage()
+    with _session() as db:
+        job = _claim(db, job_id, "generate_shorts")
+        if job is None:
+            return
+        project = db.get(Project, job.project_id, with_for_update=True)
+        assert project is not None
+        params = dict(job.params or {})
+        request = AnalysisRequest(
+            target_seconds=60 if int(params.get("target_seconds", 30)) >= 60 else 30,
+            count=min(max(int(params.get("count", 3)), 1), 5),
+            instructions=(params.get("instructions") or None),
+        )
+        auto_render = bool(params.get("auto_render", True))
+        captions = bool(params.get("captions", True))
+        language = params.get("language") or None
+        transcript = db.scalar(select(Transcript).where(Transcript.project_id == project.id))
+        existing_segments = (
+            list(transcript.segments) if transcript and transcript.segments else None
+        )
+        project_id, owner_id, workspace_id = project.id, project.owner_id, project.workspace_id
+        source_key, duration = (
+            project.source_storage_key,
+            float(project.source_duration_seconds or 0),
+        )
+        owner = db.get(Profile, owner_id)
+        assert owner is not None
+        ai_limit = get_plan(owner.plan_code).monthly_ai_minutes
+        transition_project(
+            project, ProjectStatus.analyzing if existing_segments else ProjectStatus.transcribing
+        )
+        db.commit()
+
+    reporter = JobReporter(job_id)
+    try:
+        if not source_key or duration <= 0:
+            raise ProcessingError("NO_SOURCE", "This project has no processed video.")
+        provider = get_ai_provider()
+
+        # 1. Transcript (reused when one already exists, e.g. after edits)
+        if existing_segments is None:
+            with _session() as db:
+                needed = usage.minutes(duration)
+                remaining = ai_limit - usage.used(db, owner_id, usage.AI_MINUTES)
+                if needed > remaining:
+                    raise ProcessingError(
+                        "QUOTA_EXCEEDED",
+                        f"This video needs {needed:.1f} AI minutes but only "
+                        f"{max(remaining, 0):.1f} remain this month.",
+                    )
+            reporter.stage("extracting_audio", 0.03)
+            segments: list[TranscriptSegment] = []
+            detected: str | None = None
+            with tempfile.TemporaryDirectory(dir=_work_dir()) as tmp:
+                audio = Path(tmp) / "audio.mp3"
+                _extract_audio(
+                    storage.ffmpeg_input(source_key, ttl=3600),
+                    audio,
+                    settings.ffmpeg_timeout_seconds,
+                )
+                chunk = float(settings.transcription_chunk_seconds)
+                starts = [
+                    i * chunk
+                    for i in range(int(duration // chunk) + 1)
+                    if i * chunk < duration - 0.5
+                ] or [0.0]
+                for n, start in enumerate(starts):
+                    if reporter.cancelled():
+                        raise ProcessingError("CANCELLED", "The job was cancelled.")
+                    reporter.stage("transcribing", 0.05 + 0.6 * n / len(starts))
+                    length = min(chunk, duration - start)
+                    part = Path(tmp) / f"chunk{n}.mp3"
+                    _audio_chunk(audio, start, length, part)
+                    lang, chunk_segments = provider.transcribe_chunk(
+                        part, length, language or detected
+                    )
+                    detected = detected or lang
+                    for s in chunk_segments:
+                        segments.append(
+                            TranscriptSegment(
+                                round(s.start + start, 2),
+                                round(min(s.end + start, duration), 2),
+                                s.text,
+                            )
+                        )
+            with _session() as db:
+                row = db.scalar(select(Transcript).where(Transcript.project_id == project_id))
+                if row is None:
+                    row = Transcript(project_id=project_id)
+                    db.add(row)
+                row.language = detected
+                row.provider = provider.name
+                row.has_word_timestamps = False
+                row.segments = [s.to_dict() for s in segments]
+                row.full_text = " ".join(s.text for s in segments)
+                usage.charge_once(
+                    db,
+                    user_id=owner_id,
+                    workspace_id=workspace_id,
+                    event_type="ai_transcription",
+                    quantity=usage.minutes(duration),
+                    unit=usage.AI_MINUTES,
+                    idempotency_key=f"transcribe:{project_id}:{source_key}",
+                    project_id=project_id,
+                    job_id=job_id,
+                    metadata={"duration_seconds": duration, "provider": provider.name},
+                )
+                db.commit()
+            _set_project_status(project_id, ProjectStatus.analyzing)
+        else:
+            segments = [
+                TranscriptSegment(float(s["start"]), float(s["end"]), str(s["text"]))
+                for s in existing_segments
+            ]
+            with _session() as db:
+                row = db.scalar(select(Transcript).where(Transcript.project_id == project_id))
+                detected = row.language if row else None
+
+        if not segments:
+            raise ProcessingError(
+                "NO_SPEECH",
+                "No speech was found in this video, so AI can't pick moments. "
+                "You can still create clips manually.",
+            )
+
+        # 2. Pick moments
+        reporter.stage("finding_moments", 0.7)
+        raw = provider.propose_clips(segments, request)
+        candidates = validate_candidates(raw, segments, duration, request, detected)
+        if not candidates:
+            raise ProcessingError(
+                "NO_CANDIDATES",
+                "The AI couldn't find a self-contained moment of the requested "
+                "length. Try the other length or create a clip manually.",
+                retryable=False,
+            )
+
+        # 3. Create clips and queue renders
+        reporter.stage("creating_clips", 0.9)
+        _set_project_status(project_id, ProjectStatus.generating)
+        render_jobs: list[ProcessingJob] = []
+        from app.services.jobs import create_job
+
+        with _session() as db:
+            job = db.get(ProcessingJob, job_id, with_for_update=True)
+            project = db.get(Project, project_id, with_for_update=True)
+            assert job is not None and project is not None
+            if job.cancel_requested:
+                raise ProcessingError("CANCELLED", "The job was cancelled.")
+            render_budget = (
+                get_plan(owner.plan_code).monthly_render_minutes
+                - usage.used(db, owner_id, usage.RENDER_MINUTES)
+                - usage.reserved_render_minutes(db, owner_id)
+            )
+            for c in candidates:
+                clip = Clip(
+                    project_id=project_id,
+                    title=c.title[:200],
+                    start_seconds=c.start_time_seconds,
+                    end_seconds=c.end_time_seconds,
+                    duration_seconds=c.duration_seconds,
+                    selection_reason=c.selection_reason,
+                    engagement_score=c.estimated_engagement_score,
+                    origin="ai",
+                    transcript_excerpt=c.transcript_excerpt,
+                    status=ClipStatus.draft,
+                    render_settings={
+                        "aspect_ratio": "9:16",
+                        "fit": "crop",
+                        "crop_x": 0.5,
+                        "crop_y": 0.5,
+                        "pad_color": "black",
+                        "normalize_audio": True,
+                        "captions": captions,
+                        "caption_position": "lower",
+                    },
+                )
+                db.add(clip)
+                db.flush()
+                cost = usage.minutes(c.duration_seconds)
+                if auto_render and cost <= render_budget:
+                    render_budget -= cost
+                    clip.status = ClipStatus.queued
+                    render_jobs.append(
+                        create_job(
+                            db,
+                            project=project,
+                            job_type="render_clip",
+                            requested_by=owner_id,
+                            clip_id=clip.id,
+                            params={
+                                "start": clip.start_seconds,
+                                "end": clip.end_seconds,
+                                "auto": True,
+                            },
+                        )
+                    )
+            job.params = {
+                **job.params,
+                "clips_created": len(candidates),
+                "renders_queued": len(render_jobs),
+            }
+            transition_project(project, ProjectStatus.ready)
+            transition_job(job, JobStatus.succeeded)
+            job.stage = "completed"
+            db.commit()
+        for rj in render_jobs:
+            try:
+                dispatch(rj)
+            except Exception:  # noqa: BLE001
+                log.warning("render dispatch failed; recovery will retry", extra={"job_id": rj.id})
+        log.info("ai shorts created", extra={"job_id": job_id, "project_id": project_id})
+    except Exception as exc:  # noqa: BLE001
+
+        def _restore(db: Session, job: ProcessingJob) -> None:
+            # The source video is still fine: return the project to "ready".
+            project = db.get(Project, job.project_id, with_for_update=True)
+            if project is not None and project.status in AI_PROJECT_STATES:
+                transition_project(project, ProjectStatus.ready)
+
+        _handle_failure(job_id, exc, _restore)
+        # A retry will be scheduled for transient errors; keep the project usable meanwhile.
+        with _session() as db:
+            job = db.get(ProcessingJob, job_id)
+            project = db.get(Project, project_id, with_for_update=True)
+            if (
+                job is not None
+                and job.status == JobStatus.queued
+                and project is not None
+                and project.status in AI_PROJECT_STATES
+            ):
+                transition_project(project, ProjectStatus.ready)
+                db.commit()
+
+
+@celery_app.task(name="virello.generate_shorts")
+def generate_shorts(job_id: str) -> None:
+    generate_shorts_job(uuid.UUID(job_id))

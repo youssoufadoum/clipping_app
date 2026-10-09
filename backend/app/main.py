@@ -11,7 +11,17 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import health
-from app.api.v1.routes import auth, clips, jobs, me, projects, storage_local, system, usage
+from app.api.v1.routes import (
+    auth,
+    clips,
+    jobs,
+    me,
+    projects,
+    storage_local,
+    system,
+    transcripts,
+    usage,
+)
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging, correlation_id_var
@@ -62,7 +72,7 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Correlation-ID"],
-        expose_headers=["X-Correlation-ID"],
+        expose_headers=["X-Correlation-ID", "Content-Disposition"],
         max_age=600,
     )
 
@@ -123,7 +133,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     api = "/api/v1"
-    for module in (auth, me, system, projects, jobs, clips, usage):
+    for module in (auth, me, system, projects, jobs, clips, transcripts, usage):
         app.include_router(module.router, prefix=api)
     if settings.storage_backend == "local":
         app.include_router(storage_local.router, prefix=api)

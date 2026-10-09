@@ -49,6 +49,7 @@ export function PricingTable({ currentPlan }: { currentPlan?: string }) {
               <ul className="mt-5 flex-1 space-y-2.5">
                 <Row ok>{p.monthly_source_minutes.toLocaleString()} source minutes / month</Row>
                 <Row ok>{p.monthly_render_minutes.toLocaleString()} export minutes / month</Row>
+                <Row ok>{p.monthly_ai_minutes.toLocaleString()} AI minutes / month</Row>
                 <Row ok>Uploads up to {(p.max_upload_bytes / 1024 ** 3).toFixed(0)} GB</Row>
                 <Row ok>Videos up to {formatDuration(p.max_video_duration_seconds)} long</Row>
                 <Row ok={!p.watermark}>{p.watermark ? "Watermarked exports" : "No watermark"}</Row>

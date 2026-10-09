@@ -36,6 +36,7 @@ export interface Job {
   started_at: string | null;
   completed_at: string | null;
   updated_at: string;
+  params?: Record<string, unknown>;
 }
 
 export interface SourceMetadata {
@@ -79,6 +80,8 @@ export interface RenderSettings {
   crop_y: number;
   pad_color: "black" | "white" | "0x111827";
   normalize_audio: boolean;
+  captions?: boolean;
+  caption_position?: "lower" | "middle";
 }
 
 export interface Clip {
@@ -143,6 +146,7 @@ export interface Plan {
   description: string;
   monthly_source_minutes: number;
   monthly_render_minutes: number;
+  monthly_ai_minutes: number;
   max_upload_bytes: number;
   max_video_duration_seconds: number;
   max_projects: number;
@@ -163,6 +167,9 @@ export interface Usage {
   render_minutes_reserved: number;
   render_minutes_limit: number;
   render_minutes_remaining: number;
+  ai_minutes_used: number;
+  ai_minutes_limit: number;
+  ai_minutes_remaining: number;
   policy: string[];
 }
 
@@ -189,4 +196,32 @@ export interface SignedUrl {
   url: string;
   expires_in: number;
   filename?: string | null;
+}
+
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface Transcript {
+  project_id: string;
+  language: string | null;
+  provider: string | null;
+  has_word_timestamps: boolean;
+  segments: TranscriptSegment[];
+  updated_at: string;
+}
+
+export interface SystemStatus {
+  environment: string;
+  auth_mode: string;
+  ai_available: boolean;
+}
+
+export interface ShortsOptions {
+  target_seconds: 30 | 60;
+  count: number;
+  captions: boolean;
+  auto_render: boolean;
 }

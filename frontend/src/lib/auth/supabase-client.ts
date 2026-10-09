@@ -1,13 +1,19 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { config } from "@/lib/config";
-import type { AuthClient, AuthUser, SignUpResult } from "@/lib/auth/types";
+import { EmailNotVerifiedError, type AuthClient, type AuthUser, type SignUpResult } from "@/lib/auth/types";
+
+function friendlyOtpError(message: string): string {
+  if (/expired|invalid/i.test(message)) return "That code is invalid or has expired. Request a new one.";
+  return message;
+}
 
 /** Supabase Auth: email/password with verification, password reset, optional Google OAuth. */
 export class SupabaseAuthClient implements AuthClient {
   readonly mode = "supabase" as const;
   readonly supportsPasswordReset = true;
   readonly supportsOAuth = config.googleAuthEnabled;
+  readonly requiresEmailVerification = true;
   private client: SupabaseClient;
 
   constructor() {
@@ -34,7 +40,27 @@ export class SupabaseAuthClient implements AuthClient {
 
   async signIn(email: string, password: string): Promise<void> {
     const { error } = await this.client.auth.signInWithPassword({ email, password });
+    if (error) {
+      if (error.code === "email_not_confirmed" || /not confirmed/i.test(error.message)) {
+        throw new EmailNotVerifiedError();
+      }
+      throw new Error(error.message);
+    }
+  }
+
+  async verifySignupCode(email: string, code: string): Promise<void> {
+    const { error } = await this.client.auth.verifyOtp({ email, token: code, type: "email" });
+    if (error) throw new Error(friendlyOtpError(error.message));
+  }
+
+  async resendSignupCode(email: string): Promise<void> {
+    const { error } = await this.client.auth.resend({ type: "signup", email });
     if (error) throw new Error(error.message);
+  }
+
+  async verifyRecoveryCode(email: string, code: string): Promise<void> {
+    const { error } = await this.client.auth.verifyOtp({ email, token: code, type: "recovery" });
+    if (error) throw new Error(friendlyOtpError(error.message));
   }
 
   async signUp(email: string, password: string): Promise<SignUpResult> {

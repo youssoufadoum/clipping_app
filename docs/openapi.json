@@ -1079,6 +1079,7 @@
           "jobs"
         ],
         "summary": "Analyze Project",
+        "description": "Transcribe if needed, let the AI pick short-form moments, then create and render clips.",
         "operationId": "analyze_project_api_v1_projects__project_id__analyze_post",
         "parameters": [
           {
@@ -1092,6 +1093,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1104,7 +1115,7 @@
             }
           },
           "503": {
-            "description": "AI analysis is not available yet"
+            "description": "AI is not configured on this server"
           },
           "422": {
             "description": "Validation Error",
@@ -1672,6 +1683,159 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/transcript": {
+      "get": {
+        "tags": [
+          "transcripts"
+        ],
+        "summary": "Get Transcript",
+        "operationId": "get_transcript_api_v1_projects__project_id__transcript_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "transcripts"
+        ],
+        "summary": "Update Transcript",
+        "description": "Correct transcript text. Timings are kept; captions use the corrected text.",
+        "operationId": "update_transcript_api_v1_projects__project_id__transcript_patch",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clips/{clip_id}/subtitles": {
+      "get": {
+        "tags": [
+          "transcripts"
+        ],
+        "summary": "Clip Subtitles",
+        "description": "Subtitles for the clip, timed relative to the clip start.",
+        "operationId": "clip_subtitles_api_v1_clips__clip_id__subtitles_get",
+        "parameters": [
+          {
+            "name": "clip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Clip Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "srt",
+                "vtt"
+              ],
+              "type": "string",
+              "default": "srt",
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/usage": {
       "get": {
         "tags": [
@@ -1834,6 +1998,95 @@
           "confirm"
         ],
         "title": "AccountDeletion"
+      },
+      "AnalyzeRequest": {
+        "properties": {
+          "target_seconds": {
+            "type": "integer",
+            "enum": [
+              30,
+              60
+            ],
+            "title": "Target Seconds",
+            "default": 30
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 3
+          },
+          "captions": {
+            "type": "boolean",
+            "title": "Captions",
+            "default": true
+          },
+          "auto_render": {
+            "type": "boolean",
+            "title": "Auto Render",
+            "default": true
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^[a-zA-Z-]{2,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          }
+        },
+        "type": "object",
+        "title": "AnalyzeRequest"
+      },
+      "AutoShorts": {
+        "properties": {
+          "target_seconds": {
+            "type": "integer",
+            "enum": [
+              30,
+              60
+            ],
+            "title": "Target Seconds",
+            "default": 30
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 3
+          },
+          "captions": {
+            "type": "boolean",
+            "title": "Captions",
+            "default": true
+          },
+          "auto_render": {
+            "type": "boolean",
+            "title": "Auto Render",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "AutoShorts"
       },
       "ClipCreate": {
         "properties": {
@@ -2155,6 +2408,11 @@
             "type": "boolean",
             "title": "Cancel Requested"
           },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -2451,6 +2709,10 @@
             "type": "integer",
             "title": "Monthly Render Minutes"
           },
+          "monthly_ai_minutes": {
+            "type": "integer",
+            "title": "Monthly Ai Minutes"
+          },
           "max_upload_bytes": {
             "type": "integer",
             "title": "Max Upload Bytes"
@@ -2487,6 +2749,7 @@
           "description",
           "monthly_source_minutes",
           "monthly_render_minutes",
+          "monthly_ai_minutes",
           "max_upload_bytes",
           "max_video_duration_seconds",
           "max_projects",
@@ -2993,6 +3256,20 @@
             "type": "boolean",
             "title": "Normalize Audio",
             "default": false
+          },
+          "captions": {
+            "type": "boolean",
+            "title": "Captions",
+            "default": false
+          },
+          "caption_position": {
+            "type": "string",
+            "enum": [
+              "lower",
+              "middle"
+            ],
+            "title": "Caption Position",
+            "default": "lower"
           }
         },
         "additionalProperties": false,
@@ -3094,12 +3371,141 @@
         ],
         "title": "TokenResponse"
       },
+      "TranscriptEdit": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "text"
+        ],
+        "title": "TranscriptEdit"
+      },
+      "TranscriptOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "has_word_timestamps": {
+            "type": "boolean",
+            "title": "Has Word Timestamps"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentOut"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "language",
+          "provider",
+          "has_word_timestamps",
+          "segments",
+          "updated_at"
+        ],
+        "title": "TranscriptOut"
+      },
+      "TranscriptSegmentOut": {
+        "properties": {
+          "start": {
+            "type": "number",
+            "title": "Start"
+          },
+          "end": {
+            "type": "number",
+            "title": "End"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "TranscriptSegmentOut"
+      },
+      "TranscriptUpdate": {
+        "properties": {
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptEdit"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Segments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "segments"
+        ],
+        "title": "TranscriptUpdate"
+      },
       "UploadComplete": {
         "properties": {
           "upload_id": {
             "type": "string",
             "format": "uuid",
             "title": "Upload Id"
+          },
+          "auto_shorts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutoShorts"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3297,6 +3703,18 @@
             "type": "number",
             "title": "Render Minutes Remaining"
           },
+          "ai_minutes_used": {
+            "type": "number",
+            "title": "Ai Minutes Used"
+          },
+          "ai_minutes_limit": {
+            "type": "integer",
+            "title": "Ai Minutes Limit"
+          },
+          "ai_minutes_remaining": {
+            "type": "number",
+            "title": "Ai Minutes Remaining"
+          },
           "policy": {
             "items": {
               "type": "string"
@@ -3317,6 +3735,9 @@
           "render_minutes_reserved",
           "render_minutes_limit",
           "render_minutes_remaining",
+          "ai_minutes_used",
+          "ai_minutes_limit",
+          "ai_minutes_remaining",
           "policy"
         ],
         "title": "UsageOut"

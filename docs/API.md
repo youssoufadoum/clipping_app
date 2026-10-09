@@ -49,7 +49,7 @@ cd backend && uv run python -m app.cli export-openapi ../docs/openapi.json
 | GET | `/projects/{id}/jobs` | Job history |
 | POST | `/projects/{id}/uploads/initiate` | `{ filename, content_type, size_bytes }` → presigned `{ upload_id, method, url, headers }` |
 | (client) | `PUT <url>` | Upload the file directly to storage with the returned headers |
-| POST | `/projects/{id}/uploads/complete` | `{ upload_id }`: verifies the object and queues `inspect_media` (idempotent) |
+| POST | `/projects/{id}/uploads/complete` | `{ upload_id, auto_shorts? }`: verifies the object and queues `inspect_media` (idempotent). With `auto_shorts` `{ target_seconds, count, captions, auto_render }`, AI shorts start automatically after inspection |
 | POST | `/projects/{id}/uploads/abort` | Abandon an in-progress upload |
 | GET | `/projects/{id}/media` | Assets (source, thumbnails, renders) |
 | GET | `/projects/{id}/source-url` | Short-lived URL for previewing the source |
@@ -62,7 +62,8 @@ cd backend && uv run python -m app.cli export-openapi ../docs/openapi.json
 | POST | `/jobs/{id}/cancel` | Queued jobs cancel immediately; running jobs stop at the next check |
 | POST | `/jobs/{id}/retry` | Failed or cancelled jobs only; creates a new job |
 | POST | `/projects/{id}/jobs` | `{ "job_type": "inspect_media" }` to re-run inspection after a failure |
-| POST | `/projects/{id}/analyze` | `503 FEATURE_UNAVAILABLE` until phase 2 |
+| POST | `/projects/{id}/analyze` | AI shorts. Body `{ target_seconds: 30\|60, count: 1-5, captions, auto_render, instructions?, language? }`. `503 AI_NOT_CONFIGURED` without `GEMINI_API_KEY`; `402` when AI minutes run out |
+| GET / PATCH | `/projects/{id}/transcript` | Read; PATCH `{ segments: [{ index, text }] }` corrects text (timings kept) |
 
 ### Clips and exports
 | Method | Path | Notes |
@@ -72,13 +73,15 @@ cd backend && uv run python -m app.cli export-openapi ../docs/openapi.json
 | POST | `/clips/{id}/render` (alias `/clips/{id}/exports`) | Quota-checked; returns the render job |
 | POST | `/clips/{id}/duplicate` | |
 | GET | `/clips/{id}/download?inline=false` | Signed URL to the latest render |
-| POST | `/clips/{id}/captions` | `503 FEATURE_UNAVAILABLE` until phase 2 |
+| GET | `/clips/{id}/subtitles?format=srt\|vtt` | Captions for the clip, timed from the clip start |
+| POST | `/clips/{id}/captions` | `503 FEATURE_UNAVAILABLE` (captions come from the transcript; set `render_settings.captions`) |
 | GET | `/exports` · `/exports/{id}` | Export history · signed download URL |
 
 `render_settings`:
 ```json
 { "aspect_ratio": "9:16 | 1:1 | 16:9 | original", "fit": "crop | pad",
-  "crop_x": 0.5, "crop_y": 0.5, "pad_color": "black | white | 0x111827", "normalize_audio": false }
+  "crop_x": 0.5, "crop_y": 0.5, "pad_color": "black | white | 0x111827", "normalize_audio": false,
+  "captions": false, "caption_position": "lower | middle" }
 ```
 
 ### Usage and billing

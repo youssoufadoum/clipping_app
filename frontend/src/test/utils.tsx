@@ -14,6 +14,10 @@ export function fakeAuthClient(user: AuthUser | null = { id: "u1", email: "ada@e
     mode: "local",
     supportsPasswordReset: false,
     supportsOAuth: false,
+    requiresEmailVerification: false,
+    verifySignupCode: vi.fn(async () => {}),
+    resendSignupCode: vi.fn(async () => {}),
+    verifyRecoveryCode: vi.fn(async () => {}),
     getUser: vi.fn(async () => current),
     getAccessToken: vi.fn(async () => (current ? "test-token" : null)),
     signIn: vi.fn(async (email: string) => {
@@ -25,8 +29,8 @@ export function fakeAuthClient(user: AuthUser | null = { id: "u1", email: "ada@e
       current = null;
     }),
     signInWithGoogle: vi.fn(),
-    requestPasswordReset: vi.fn(),
-    updatePassword: vi.fn(),
+    requestPasswordReset: vi.fn(async () => {}),
+    updatePassword: vi.fn(async () => {}),
     onChange: (l) => {
       listeners.add(l);
       return () => listeners.delete(l);

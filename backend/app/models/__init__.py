@@ -66,6 +66,7 @@ class JobType(enum.StrEnum):
     render_clip = "render_clip"
     transcribe = "transcribe"
     analyze = "analyze"
+    generate_shorts = "generate_shorts"
 
 
 class ClipStatus(enum.StrEnum):

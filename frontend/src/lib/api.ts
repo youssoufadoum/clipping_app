@@ -29,6 +29,10 @@ export function configureApi(tokenGetter: TokenGetter, unauthorized: Unauthorize
   onUnauthorized = unauthorized;
 }
 
+export function getApiToken(): Promise<string | null> {
+  return getToken();
+}
+
 export interface RequestOptions {
   method?: string;
   body?: unknown;
