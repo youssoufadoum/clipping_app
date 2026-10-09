@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_transcription_model: str = ""
     openai_analysis_model: str = ""
+    # YouTube link import (yt-dlp). Users must confirm they have rights to the video.
+    youtube_import_enabled: bool = True
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
     gemini_timeout_seconds: int = 300

@@ -10,7 +10,7 @@ export interface Feature {
 
 /** Feature availability is kept honest: only shipped features are marked available. */
 export const FEATURES: Feature[] = [
-  { icon: UploadCloud, title: "Direct, resumable-friendly uploads", description: "Send MP4, MOV or WebM files straight to private storage with real progress, cancel and retry.", available: true },
+  { icon: UploadCloud, title: "YouTube link or upload", description: "Paste a link to your YouTube video, or send MP4, MOV and WebM files straight to private storage with real progress.", available: true },
   { icon: ScanSearch, title: "Automatic video inspection", description: "Every upload is verified and inspected for duration, resolution, frame rate and audio before you edit.", available: true },
   { icon: Scissors, title: "Precise trim editor", description: "Scrub the source, set in and out points to a tenth of a second, and save as many clips as you need.", available: true },
   { icon: Crop, title: "Reframe for every platform", description: "Export 9:16, 1:1 or 16:9. Slide the crop window to keep your subject in frame, or fit the full shot with padding.", available: true },
@@ -45,6 +45,6 @@ export const FAQS = [
   { q: "How is usage counted?", a: "Source minutes are counted once when a video is processed successfully, and render minutes are counted per successful export by clip length. Failed and cancelled jobs are never charged. Your usage page shows every entry." },
   { q: "Who can see my videos?", a: "Only you. Media is stored in private storage and served through links that expire within minutes. You can delete individual exports, whole projects, or your entire account at any time." },
   { q: "Will you use my videos to train AI models?", a: "We don't. For AI shorts, your video's audio is sent to Google's Gemini API only to transcribe it and pick moments, under Google's API data terms. See the privacy policy for details." },
-  { q: "Can I import from a YouTube or social media link?", a: "Not at the moment. Many platforms do not permit downloading through third-party tools, so direct upload of files you have rights to is the supported method." },
+  { q: "Can I paste a YouTube link?", a: "Yes. Paste a link to a single YouTube video that you own or have permission to use, and choose 30-second or 1-minute AI shorts. Private, age-restricted, members-only and live videos can't be imported, and YouTube sometimes refuses downloads; in that case you can upload the file instead." },
   { q: "How do paid plans work?", a: "Plans differ by monthly minutes, upload size and video length. Online checkout is not available yet; the pricing page shows each plan's limits today." },
 ];

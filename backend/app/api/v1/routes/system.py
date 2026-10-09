@@ -21,6 +21,7 @@ def feature_status() -> dict[str, object]:
         "environment": s.app_env,
         "auth_mode": s.auth_mode,
         "ai_available": s.ai_configured,
+        "youtube_import": s.youtube_import_enabled,
         "storage_backend": s.storage_backend,
         "features": {
             "upload": True,
@@ -30,10 +31,11 @@ def feature_status() -> dict[str, object]:
             "captions": _ai(s.ai_configured),
             "billing": {"available": False, "reason": "Stripe checkout is planned for phase 3."},
             "email": {"available": False, "reason": "Transactional email is planned for phase 3."},
-            "url_import": {
-                "available": False,
-                "reason": "Direct upload is the supported input method.",
-            },
+            "url_import": (
+                {"available": True, "provider": "youtube"}
+                if s.youtube_import_enabled
+                else {"available": False, "reason": "YouTube import is turned off."}
+            ),
             "social_publishing": {"available": False, "reason": "Planned for phase 4."},
         },
     }

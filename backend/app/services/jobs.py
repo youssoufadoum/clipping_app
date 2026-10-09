@@ -36,6 +36,7 @@ PROJECT_TRANSITIONS: dict[str, set[str]] = {
         ProjectStatus.failed,
         ProjectStatus.archived,
     },
+    ProjectStatus.importing: {ProjectStatus.queued, ProjectStatus.failed, ProjectStatus.cancelled},
     ProjectStatus.queued: {ProjectStatus.inspecting, ProjectStatus.failed, ProjectStatus.cancelled},
     ProjectStatus.inspecting: {
         ProjectStatus.ready,
@@ -70,8 +71,18 @@ PROJECT_TRANSITIONS: dict[str, set[str]] = {
     },
     ProjectStatus.completed: {ProjectStatus.ready, ProjectStatus.archived},
     ProjectStatus.partially_failed: {ProjectStatus.ready, ProjectStatus.archived},
-    ProjectStatus.failed: {ProjectStatus.queued, ProjectStatus.draft, ProjectStatus.archived},
-    ProjectStatus.cancelled: {ProjectStatus.queued, ProjectStatus.draft, ProjectStatus.archived},
+    ProjectStatus.failed: {
+        ProjectStatus.queued,
+        ProjectStatus.importing,
+        ProjectStatus.draft,
+        ProjectStatus.archived,
+    },
+    ProjectStatus.cancelled: {
+        ProjectStatus.queued,
+        ProjectStatus.importing,
+        ProjectStatus.draft,
+        ProjectStatus.archived,
+    },
     ProjectStatus.archived: {ProjectStatus.draft, ProjectStatus.ready, ProjectStatus.failed},
 }
 
@@ -157,6 +168,7 @@ TASK_NAMES = {
     "inspect_media": "virello.inspect_media",
     "render_clip": "virello.render_clip",
     "generate_shorts": "virello.generate_shorts",
+    "import_url": "virello.import_url",
 }
 
 

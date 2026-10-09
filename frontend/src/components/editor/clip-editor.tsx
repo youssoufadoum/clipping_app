@@ -162,7 +162,7 @@ function EditorBody({ project, clip }: { project: Project; clip: Clip }) {
   const [videoError, setVideoError] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const transcript = useTranscript(project.id);
+  const transcript = useTranscript(project.id, Boolean(project.has_transcript));
   const hasTranscript = Boolean(transcript.data?.segments.length);
   const duration = project.source_duration_seconds ?? 0;
   const sw = project.source_width ?? 16;

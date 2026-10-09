@@ -334,3 +334,68 @@ describe("AI shorts", () => {
     );
   });
 });
+
+describe("LinkImporter", () => {
+  const link = "https://youtu.be/dQw4w9WgXcQ";
+
+  it("validates the link and requires the rights confirmation", async () => {
+    const { LinkImporter } = await import("@/components/app/link-importer");
+    mockFetch({ "GET /api/v1/system/status": () => ({ json: { ai_available: true, youtube_import: true } }) });
+    renderWithProviders(<LinkImporter />);
+    const input = await screen.findByLabelText("Paste a YouTube link");
+    await userEvent.type(input, "https://vimeo.com/123");
+    await userEvent.tab();
+    expect(await screen.findByText(/single YouTube video/)).toBeInTheDocument();
+    await userEvent.clear(input);
+    await userEvent.type(input, link);
+    const submit = screen.getByRole("button", { name: "Make shorts" });
+    expect(submit).toBeDisabled(); // rights not confirmed yet
+    await userEvent.click(screen.getByRole("checkbox", { name: /I own this video/ }));
+    expect(submit).toBeEnabled();
+  });
+
+  it("imports with the chosen AI short length and opens the project", async () => {
+    const { LinkImporter } = await import("@/components/app/link-importer");
+    let sent: unknown = null;
+    mockFetch({
+      "GET /api/v1/system/status": () => ({ json: { ai_available: true, youtube_import: true } }),
+      "POST /api/v1/projects/import": (body) => {
+        sent = body;
+        return { status: 201, json: { project: { id: "p9" }, job: { id: "j9" } } };
+      },
+    });
+    renderWithProviders(<LinkImporter />);
+    await userEvent.type(await screen.findByLabelText("Paste a YouTube link"), link);
+    await userEvent.click(screen.getByRole("radio", { name: "1 minute" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /I own this video/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Make shorts" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/projects/p9"));
+    expect(sent).toEqual({
+      url: link,
+      rights_confirmed: true,
+      title: null,
+      auto_shorts: { target_seconds: 60, count: 3, captions: true, auto_render: true },
+    });
+  });
+
+  it("shows server errors and hides when import is disabled", async () => {
+    const { LinkImporter } = await import("@/components/app/link-importer");
+    mockFetch({
+      "GET /api/v1/system/status": () => ({ json: { ai_available: false, youtube_import: true } }),
+      "POST /api/v1/projects/import": () => ({
+        status: 402,
+        json: { error: { code: "QUOTA_EXCEEDED", message: "You have used all of this month's source minutes." } },
+      }),
+    });
+    const { unmount } = renderWithProviders(<LinkImporter />);
+    await userEvent.type(await screen.findByLabelText("Paste a YouTube link"), link);
+    await userEvent.click(screen.getByRole("checkbox", { name: /I own this video/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Import video" })); // no AI configured
+    expect(await screen.findByText(/used all of this month/)).toBeInTheDocument();
+    unmount();
+
+    mockFetch({ "GET /api/v1/system/status": () => ({ json: { ai_available: false, youtube_import: false } }) });
+    renderWithProviders(<LinkImporter />);
+    await waitFor(() => expect(screen.queryByLabelText("Paste a YouTube link")).not.toBeInTheDocument());
+  });
+});

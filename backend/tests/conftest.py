@@ -87,6 +87,7 @@ def eager_queue(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, list[str]]]:
         "virello.inspect_media": tasks.inspect_media,
         "virello.render_clip": tasks.render_clip,
         "virello.generate_shorts": tasks.generate_shorts,
+        "virello.import_url": tasks.import_url,
     }
 
     def fake_send_task(name: str, args: list[str] | None = None, **_: object) -> None:

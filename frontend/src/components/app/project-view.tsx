@@ -69,7 +69,7 @@ function RenameDialog({ project }: { project: Project }) {
 function SourceDetails({ project }: { project: Project }) {
   const m = project.source_metadata;
   const rows: [string, string][] = [
-    ["File", project.source_filename ?? "—"],
+    [project.source_type === "youtube" ? "Source" : "File", project.source_type === "youtube" ? "YouTube" : (project.source_filename ?? "—")],
     ["Duration", formatDuration(project.source_duration_seconds)],
     ["Resolution", project.source_width ? `${project.source_width} × ${project.source_height}` : "—"],
     ["Frame rate", project.source_fps ? `${project.source_fps} fps` : "—"],
@@ -86,6 +86,11 @@ function SourceDetails({ project }: { project: Project }) {
         {project.thumbnail_url && (
           // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
           <img src={project.thumbnail_url} alt="Source video thumbnail" className="aspect-video w-full rounded-lg object-cover" />
+        )}
+        {project.source_url && (
+          <a href={project.source_url} target="_blank" rel="noopener noreferrer" className="block truncate text-sm text-accent hover:underline">
+            {project.source_url}
+          </a>
         )}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
           {rows.map(([k, v]) => (
@@ -273,7 +278,9 @@ function JobHistory({ projectId }: { projectId: string }) {
                     ? "Clip render"
                     : j.job_type === "generate_shorts"
                       ? "AI shorts"
-                      : j.job_type}
+                      : j.job_type === "import_url"
+                        ? "YouTube import"
+                        : j.job_type}
                 <span className="block text-xs text-muted">{formatDateTime(j.created_at)}{j.error_code ? ` · ${j.error_code}` : ""}</span>
               </span>
               <StatusBadge status={j.status} />
@@ -331,7 +338,7 @@ export function ProjectView() {
 
   const p = project.data;
   const job = p.latest_job;
-  const inspectJob = job?.job_type === "inspect_media" ? job : null;
+  const inspectJob = job?.job_type === "inspect_media" || job?.job_type === "import_url" ? job : null;
   // Renders queued by the AI job become the "latest" job, so also look in the history.
   const aiJob =
     job?.job_type === "generate_shorts" ? job : (jobs.data?.find((j) => j.job_type === "generate_shorts") ?? null);
@@ -395,7 +402,11 @@ export function ProjectView() {
             </Card>
           )}
           {inspectJob && (inspectJob.status !== "succeeded" || p.status === "failed") && (
-            <JobStatusPanel job={inspectJob} label="Video processing" invalidate={[keys.project(id), keys.jobs(id)]} />
+            <JobStatusPanel
+              job={inspectJob}
+              label={inspectJob.job_type === "import_url" ? "YouTube import" : "Video processing"}
+              invalidate={[keys.project(id), keys.jobs(id)]}
+            />
           )}
           {aiJob && aiJob.status !== "succeeded" && (
             <JobStatusPanel job={aiJob} label="AI shorts" invalidate={[keys.project(id), keys.jobs(id), keys.clips(id)]} />
@@ -408,7 +419,7 @@ export function ProjectView() {
           )}
           {CLIP_READY.has(p.status) && <AiShortsCard project={p} aiAvailable={aiAvailable} />}
           {CLIP_READY.has(p.status) && <ClipsSection project={p} />}
-          <TranscriptPanel projectId={p.id} enabled={aiAvailable && p.source_duration_seconds != null} />
+          <TranscriptPanel projectId={p.id} enabled={Boolean(p.has_transcript)} />
           {p.status === "archived" && (
             <Alert variant="info" title="This project is archived">
               Restore it to create or render clips.

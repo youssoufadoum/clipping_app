@@ -17,7 +17,9 @@ export default function TermsPage() {
         <h2>Your content</h2>
         <p>
           You keep all rights to the videos you upload. You grant us a limited license to store and process them only to provide the
-          service to you. You confirm you have the rights and permissions needed to upload and process every file.
+          service to you. You confirm you have the rights and permissions needed to upload and process every file, including any
+          video you import by link. Importing from YouTube is subject to YouTube&apos;s own Terms of Service; only import videos
+          you own or are authorized to use.
         </p>
         <h2>Acceptable use</h2>
         <ul>

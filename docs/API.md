@@ -47,6 +47,7 @@ cd backend && uv run python -m app.cli export-openapi ../docs/openapi.json
 | GET | `/projects` | `q`, `status`, `include_archived`, `sort`, pagination |
 | GET / PATCH / DELETE | `/projects/{id}` | PATCH `{ title?, archived? }`; DELETE removes all media |
 | GET | `/projects/{id}/jobs` | Job history |
+| POST | `/projects/import` | Body `{ url, rights_confirmed: true, title?, auto_shorts? }`. Creates a project from a single YouTube video link and queues the download (`import_url` job), then inspection and optional AI shorts. `422 UNSUPPORTED_URL` / `RIGHTS_NOT_CONFIRMED`; `503 URL_IMPORT_DISABLED` |
 | POST | `/projects/{id}/uploads/initiate` | `{ filename, content_type, size_bytes }` → presigned `{ upload_id, method, url, headers }` |
 | (client) | `PUT <url>` | Upload the file directly to storage with the returned headers |
 | POST | `/projects/{id}/uploads/complete` | `{ upload_id, auto_shorts? }`: verifies the object and queues `inspect_media` (idempotent). With `auto_shorts` `{ target_seconds, count, captions, auto_render }`, AI shorts start automatically after inspection |

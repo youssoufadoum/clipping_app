@@ -932,3 +932,160 @@ def generate_shorts_job(job_id: uuid.UUID) -> None:
 @celery_app.task(name="virello.generate_shorts")
 def generate_shorts(job_id: str) -> None:
     generate_shorts_job(uuid.UUID(job_id))
+
+
+# ---------------------------------------------------------------------------
+# YouTube link import
+# ---------------------------------------------------------------------------
+
+
+def import_url_job(job_id: uuid.UUID) -> None:
+    from app.services.importers.youtube import get_importer
+    from app.services.jobs import create_job
+
+    settings = get_settings()
+    storage = get_storage()
+    with _session() as db:
+        job = _claim(db, job_id, "import_url")
+        if job is None:
+            return
+        project = db.get(Project, job.project_id)
+        assert project is not None
+        source = dict((project.processing_settings or {}).get("import") or {})
+        video_id = str(source.get("video_id") or "")
+        project_id, owner_id, title_is_placeholder = (
+            project.id,
+            project.owner_id,
+            bool(source.get("placeholder_title")),
+        )
+        owner = db.get(Profile, owner_id)
+        assert owner is not None
+        plan = get_plan(owner.plan_code)
+        max_duration = min(plan.max_video_duration_seconds, settings.max_video_duration_seconds)
+        max_bytes = min(plan.max_upload_bytes, settings.max_upload_bytes)
+
+    reporter = JobReporter(job_id)
+    importer = get_importer()
+    try:
+        if not settings.youtube_import_enabled:
+            raise ProcessingError("URL_IMPORT_DISABLED", "YouTube import is turned off.")
+        if not video_id:
+            raise ProcessingError("NO_SOURCE", "This project has no YouTube link.")
+
+        reporter.stage("fetching_info", 0.02)
+        info = importer.fetch_info(video_id)
+        if info.is_live:
+            raise ProcessingError(
+                "LIVE_NOT_SUPPORTED", "Live streams can't be imported. Try again after it ends."
+            )
+        if not info.duration:
+            raise ProcessingError("INVALID_DURATION", "YouTube didn't report this video's length.")
+        if info.duration > max_duration:
+            raise ProcessingError(
+                "VIDEO_TOO_LONG",
+                f"The video is {info.duration / 60:.1f} minutes long; your plan allows up to "
+                f"{max_duration / 60:.0f} minutes per video.",
+            )
+        with _session() as db:
+            needed = usage.minutes(info.duration)
+            remaining = plan.monthly_source_minutes - usage.used(db, owner_id, usage.SOURCE_MINUTES)
+            if needed > remaining:
+                raise ProcessingError(
+                    "QUOTA_EXCEEDED",
+                    f"This video needs {needed:.1f} source minutes but only "
+                    f"{max(remaining, 0):.1f} remain this month.",
+                )
+            project = db.get(Project, project_id, with_for_update=True)
+            assert project is not None
+            if title_is_placeholder:
+                project.title = info.title
+            project.processing_settings = {
+                **project.processing_settings,
+                "import": {
+                    **source,
+                    "title": info.title,
+                    "uploader": info.uploader,
+                    "duration": info.duration,
+                },
+            }
+            db.commit()
+
+        reporter.stage("downloading", 0.05)
+        with tempfile.TemporaryDirectory(dir=_work_dir()) as tmp:
+            path = importer.download(
+                video_id,
+                Path(tmp),
+                max_bytes,
+                on_progress=reporter.progress("downloading", 0.05, 0.85),
+                should_cancel=reporter.cancelled,
+            )
+            size = path.stat().st_size
+            if size > max_bytes:
+                raise ProcessingError(
+                    "FILE_TOO_LARGE", "The video is larger than your plan's upload limit."
+                )
+            with path.open("rb") as fh:
+                mime = sniff_container(fh.read(64))
+            if mime is None:
+                raise ProcessingError(
+                    "UNSUPPORTED_MEDIA", "The downloaded file isn't a supported video."
+                )
+            reporter.stage("saving", 0.92)
+            key = f"{project_prefix(owner_id, project_id)}source/{uuid.uuid4()}{path.suffix}"
+            storage.upload_file(path, key, mime)
+
+        with _session() as db:
+            job = db.get(ProcessingJob, job_id, with_for_update=True)
+            project = db.get(Project, project_id, with_for_update=True)
+            assert job is not None and project is not None
+            if job.cancel_requested:
+                storage.delete(key)
+                raise ProcessingError("CANCELLED", "The job was cancelled.")
+            project.source_storage_key = key
+            project.source_filename = f"{(project.title or 'youtube')[:180]}{path.suffix}"
+            project.source_size_bytes = size
+            project.source_mime_type = mime
+            db.add(
+                MediaAsset(
+                    project_id=project_id,
+                    job_id=job_id,
+                    asset_type=AssetType.source_video,
+                    storage_key=key,
+                    mime_type=mime,
+                    size_bytes=size,
+                )
+            )
+            transition_project(project, ProjectStatus.queued)
+            inspect = create_job(
+                db,
+                project=project,
+                job_type="inspect_media",
+                requested_by=owner_id,
+                idempotency_key=f"inspect-import:{job_id}",
+            )
+            transition_job(job, JobStatus.succeeded)
+            job.stage = "completed"
+            db.commit()
+        log.info("youtube import complete", extra={"job_id": job_id, "project_id": project_id})
+        try:
+            dispatch(inspect)
+        except Exception:  # noqa: BLE001 - recovery sweep re-dispatches queued jobs
+            log.warning("inspect dispatch failed", extra={"job_id": inspect.id})
+    except Exception as exc:  # noqa: BLE001
+
+        def _fail(db: Session, job: ProcessingJob) -> None:
+            project = db.get(Project, job.project_id, with_for_update=True)
+            if project is not None and project.status == ProjectStatus.importing:
+                transition_project(
+                    project,
+                    ProjectStatus.cancelled
+                    if job.status == JobStatus.cancelled
+                    else ProjectStatus.failed,
+                )
+
+        _handle_failure(job_id, exc, _fail)
+
+
+@celery_app.task(name="virello.import_url")
+def import_url(job_id: str) -> None:
+    import_url_job(uuid.UUID(job_id))

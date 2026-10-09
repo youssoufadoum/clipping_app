@@ -46,7 +46,7 @@ and the app labels it "In development" or returns an explicit
 - [x] Exports history, usage page with the charging policy, billing page (plan limits; checkout honestly unavailable)
 - [x] Health (`/health`), readiness (`/ready`), token-protected metrics (`/metrics`), structured JSON logs with
       correlation IDs and secret redaction, optional Sentry
-- [x] Tests: 98 backend (real Postgres + FFmpeg; AI via mocked HTTP and a fake provider), 37 frontend
+- [x] Tests: 145 backend (real Postgres + FFmpeg; AI via mocked HTTP and a fake provider), 42 frontend
       (Vitest/Testing Library), plus Playwright browser E2E runs
 - [x] Dockerfiles (API, worker, web), docker-compose, CI workflow, `.env.example` files
 
@@ -61,7 +61,8 @@ and the app labels it "In development" or returns an explicit
 - [x] Editable transcript; captions burned into renders (lower third or center) and SRT/VTT downloads
 - [x] AI minutes quota and usage ledger; failed AI jobs are not charged and leave the project usable
 - [ ] Word-level timestamps (Gemini returns phrase-level timing; caption timing within a phrase is approximated)
-- [ ] YouTube / URL import — deliberately not built (YouTube's Terms of Service forbid downloading; see below)
+- [x] **Paste a YouTube link** instead of uploading (yt-dlp), with rights confirmation, an on/off switch, link
+      validation, pre-download length/quota checks, real download progress, cancel and retry (see the caveats below)
 
 ### Accounts — real email verification ✅ (needs Supabase)
 - [x] Sign-up requires a **6-digit code emailed by Supabase**; unverified sign-ins get a fresh code and the code screen
@@ -193,9 +194,22 @@ real, verified emails:
 The video's audio (and then its transcript) is sent to Google's Gemini API under Google's API terms. Each video is
 transcribed once; re-running AI reuses the saved transcript.
 
-**Why there's no YouTube link import:** YouTube's Terms of Service don't allow third-party downloading, there's no
-official download API, and YouTube actively blocks downloads from cloud servers. Uploading a file you have rights
-to is the supported path. (Creators can download their own videos from YouTube Studio.)
+### YouTube link import
+Users can paste a YouTube link instead of uploading a file. The worker downloads the video with
+[yt-dlp](https://github.com/yt-dlp/yt-dlp), which needs a JavaScript runtime: the `deno` Python package installs one
+automatically. Processing then continues exactly like an upload (inspection, then AI shorts if chosen).
+
+Read this before enabling it publicly:
+- **YouTube's Terms of Service restrict downloading.** Users must tick "I own this video or have permission"
+  (recorded in `audit_events`), but the legal risk is the operator's. Turn the feature off with
+  `YOUTUBE_IMPORT_ENABLED=false`.
+- **YouTube often blocks cloud/datacenter servers** ("Sign in to confirm you're not a bot"). It usually works from a
+  home connection; on a hosted server it may fail, and users then see a message suggesting they upload the file.
+- Only single-video links are accepted (`youtube.com/watch?v=`, `youtu.be/`, `/shorts/`, `/live/`, `/embed/`). The
+  pasted URL is never fetched: the video id is validated and a canonical youtube.com URL is rebuilt, so other hosts
+  can't be reached. Playlists, live streams, private, age-restricted and members-only videos are refused.
+- Length and plan limits are checked **before** downloading; downloads are capped at 1080p and your plan's size limit.
+- yt-dlp must stay current as YouTube changes: rebuild images regularly (`docker compose build --no-cache`).
 
 ### Supabase (details)
 1. Create a project. In **Project Settings → API**, copy the URL and anon key into `NEXT_PUBLIC_SUPABASE_URL` /

@@ -138,6 +138,8 @@ class ProjectOut(ORM):
     created_at: datetime
     updated_at: datetime
     thumbnail_url: str | None = None
+    source_url: str | None = None
+    has_transcript: bool = False
     clip_count: int = 0
     latest_job: JobOut | None = None
 
@@ -170,6 +172,13 @@ class AutoShorts(BaseModel):
 class AnalyzeRequest(AutoShorts):
     instructions: str | None = Field(default=None, max_length=500)
     language: str | None = Field(default=None, max_length=16, pattern=r"^[a-zA-Z-]{2,16}$")
+
+
+class ImportUrlRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+    rights_confirmed: bool
+    title: str | None = Field(default=None, max_length=200)
+    auto_shorts: AutoShorts | None = None
 
 
 class UploadComplete(BaseModel):

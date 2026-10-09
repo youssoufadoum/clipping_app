@@ -54,9 +54,13 @@ def cancel_job(
         # Not yet picked up: cancel immediately. A running job is stopped by the worker.
         transition_job(job, JobStatus.cancelled)
         job.stage = "cancelled"
-        if job.job_type == JobType.inspect_media:
+        if job.job_type in (JobType.inspect_media, JobType.import_url):
             project = get_project(db, user, job.project_id, lock=True)
-            if project.status in (ProjectStatus.queued, ProjectStatus.inspecting):
+            if project.status in (
+                ProjectStatus.queued,
+                ProjectStatus.inspecting,
+                ProjectStatus.importing,
+            ):
                 transition_project(project, ProjectStatus.cancelled)
         elif job.clip_id:
             clip = db.get(Clip, job.clip_id)
@@ -79,6 +83,12 @@ def _retry(db: Session, user: Profile, job: ProcessingJob) -> ProcessingJob:
             raise Conflict("This project cannot be re-inspected right now.")
         else:
             raise Conflict("This video was already processed successfully.")
+    elif job.job_type == JobType.import_url:
+        if active_jobs(db, project.id, JobType.import_url):
+            raise Conflict("This video is already being imported.")
+        if project.status not in (ProjectStatus.failed, ProjectStatus.cancelled):
+            raise Conflict("This import can't be retried right now.")
+        transition_project(project, ProjectStatus.importing)
     elif job.job_type == JobType.generate_shorts:
         if active_jobs(db, project.id, JobType.generate_shorts):
             raise Conflict("AI is already working on this video.")

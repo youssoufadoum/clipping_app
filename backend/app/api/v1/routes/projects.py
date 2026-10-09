@@ -13,11 +13,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user, rate_limit
 from app.api.v1.serializers import project_out, projects_out
 from app.core.config import get_settings
-from app.core.errors import AppError, Conflict, QuotaExceeded, ValidationFailed
+from app.core.errors import AppError, Conflict, QuotaExceeded, ServiceUnavailable, ValidationFailed
 from app.core.plans import get_plan
 from app.db.session import get_db
 from app.models import (
     AssetType,
+    AuditEvent,
     Clip,
     ClipStatus,
     JobType,
@@ -29,6 +30,7 @@ from app.models import (
     WorkspaceMember,
 )
 from app.schemas import (
+    ImportUrlRequest,
     JobOut,
     MediaOut,
     Page,
@@ -43,6 +45,7 @@ from app.schemas import (
 from app.services import usage
 from app.services.access import get_media, get_project
 from app.services.accounts import personal_workspace
+from app.services.importers.youtube import canonical_url, parse_youtube_url
 from app.services.jobs import active_jobs, create_job, dispatch, transition_project
 from app.services.media.probe import ALLOWED_CONTAINERS, ALLOWED_EXTENSIONS, sniff_container
 from app.services.storage import get_storage, project_prefix
@@ -52,6 +55,7 @@ log = logging.getLogger(__name__)
 
 UPLOAD_URL_TTL = 3600
 PROCESSING_STATUSES = {
+    ProjectStatus.importing,
     ProjectStatus.queued,
     ProjectStatus.inspecting,
     ProjectStatus.transcribing,
@@ -83,6 +87,80 @@ def create_project(
     db.add(project)
     db.commit()
     return project_out(db, project)
+
+
+@router.post(
+    "/projects/import",
+    response_model=UploadCompleteOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("url-import", 20, 3600))],
+)
+def import_from_url(
+    body: ImportUrlRequest, user: Profile = Depends(current_user), db: Session = Depends(get_db)
+) -> UploadCompleteOut:
+    """Create a project from a YouTube link. The worker downloads it, then processing continues
+    exactly as for an upload (inspection, then AI shorts if requested)."""
+    settings = get_settings()
+    if not settings.youtube_import_enabled:
+        raise ServiceUnavailable(
+            "YouTube import is turned off on this server.", code="URL_IMPORT_DISABLED"
+        )
+    if not body.rights_confirmed:
+        raise ValidationFailed(
+            "Confirm that you own this video or have permission to use it.",
+            code="RIGHTS_NOT_CONFIRMED",
+        )
+    video_id = parse_youtube_url(body.url)
+    if video_id is None:
+        raise ValidationFailed(
+            "Paste a link to a single YouTube video, like youtube.com/watch?v=… or youtu.be/….",
+            code="UNSUPPORTED_URL",
+        )
+    plan = get_plan(user.plan_code)
+    count = db.scalar(select(func.count(Project.id)).where(Project.owner_id == user.id)) or 0
+    if count >= plan.max_projects:
+        raise QuotaExceeded(
+            f"Your plan allows {plan.max_projects} projects. Delete a project or upgrade."
+        )
+    if usage.summary(db, user).source_minutes_remaining <= 0:
+        raise QuotaExceeded("You have used all of this month's source minutes.")
+
+    ws = personal_workspace(db, user.id)
+    title = (body.title or "").strip()
+    processing: dict[str, object] = {
+        "import": {
+            "provider": "youtube",
+            "video_id": video_id,
+            "url": canonical_url(video_id),
+            "placeholder_title": not title,
+            "rights_confirmed_at": datetime.now(UTC).isoformat(),
+        }
+    }
+    if body.auto_shorts is not None and settings.ai_configured:
+        processing["auto_shorts"] = body.auto_shorts.model_dump()
+    project = Project(
+        workspace_id=ws.id,
+        owner_id=user.id,
+        title=title or "YouTube video",
+        source_type="youtube",
+        status=ProjectStatus.importing,
+        processing_settings=processing,
+    )
+    db.add(project)
+    db.flush()
+    db.add(
+        AuditEvent(
+            actor_id=user.id,
+            action="import.rights_confirmed",
+            target_type="project",
+            target_id=str(project.id),
+            metadata_={"url": canonical_url(video_id)},
+        )
+    )
+    job = create_job(db, project=project, job_type=JobType.import_url, requested_by=user.id)
+    db.commit()
+    dispatch(job)
+    return UploadCompleteOut(project=project_out(db, project), job=JobOut.model_validate(job))
 
 
 @router.get("/projects", response_model=Page[ProjectOut])

@@ -1,6 +1,7 @@
 export type ProjectStatus =
   | "draft"
   | "uploading"
+  | "importing"
   | "queued"
   | "inspecting"
   | "ready"
@@ -69,6 +70,8 @@ export interface Project {
   created_at: string;
   updated_at: string;
   thumbnail_url: string | null;
+  source_url?: string | null;
+  has_transcript?: boolean;
   clip_count: number;
   latest_job: Job | null;
 }
@@ -217,6 +220,7 @@ export interface SystemStatus {
   environment: string;
   auth_mode: string;
   ai_available: boolean;
+  youtube_import: boolean;
 }
 
 export interface ShortsOptions {

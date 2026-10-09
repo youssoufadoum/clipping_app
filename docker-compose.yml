@@ -14,6 +14,7 @@ x-backend-env: &backend-env
   SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+  YOUTUBE_IMPORT_ENABLED: ${YOUTUBE_IMPORT_ENABLED:-true}
 services:
   postgres:
     image: postgres:16-alpine

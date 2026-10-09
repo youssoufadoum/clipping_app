@@ -1,10 +1,11 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { FileVideo, RotateCcw, Sparkles, UploadCloud, X } from "lucide-react";
+import { FileVideo, RotateCcw, UploadCloud, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ShortsPicker, shortsPayload, type ShortsChoice } from "@/components/app/shorts-picker";
 import { Button } from "@/components/ui/button";
 import { Alert, Progress } from "@/components/ui/feedback";
 import { api, ApiError, errorMessage } from "@/lib/api";
@@ -34,7 +35,7 @@ export function Uploader({ projectId, title, compact = false }: { projectId?: st
   const usage = useUsage();
   const system = useSystemStatus();
   const aiAvailable = system.data?.ai_available === true;
-  const [shorts, setShorts] = useState<"off" | "30" | "60">("30");
+  const [shorts, setShorts] = useState<ShortsChoice>("30");
   const inputRef = useRef<HTMLInputElement>(null);
   const handleRef = useRef<UploadHandle | null>(null);
   const projectRef = useRef<string | null>(projectId ?? null);
@@ -76,10 +77,7 @@ export function Uploader({ projectId, title, compact = false }: { projectId?: st
         handleRef.current = null;
         setPhase({ kind: "finalizing" });
         try {
-          const autoShorts =
-            aiAvailable && shorts !== "off"
-              ? { target_seconds: Number(shorts), count: 3, captions: true, auto_render: true }
-              : undefined;
+          const autoShorts = aiAvailable ? shortsPayload(shorts) : undefined;
           await api(`/api/v1/projects/${pid}/uploads/complete`, {
             body: { upload_id: target.upload_id, auto_shorts: autoShorts },
           });
@@ -121,37 +119,7 @@ export function Uploader({ projectId, title, compact = false }: { projectId?: st
 
   return (
     <div className="space-y-3">
-      {aiAvailable && !busy && (
-        <div className="flex flex-wrap items-center gap-2 text-sm" role="radiogroup" aria-label="AI shorts">
-          <span className="inline-flex items-center gap-1.5 font-medium">
-            <Sparkles className="size-4 text-accent" aria-hidden /> AI shorts
-          </span>
-          {(
-            [
-              ["off", "Off"],
-              ["30", "30 seconds"],
-              ["60", "1 minute"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={shorts === value}
-              onClick={() => setShorts(value)}
-              className={cn(
-                "rounded-full border px-3 py-1 transition-colors",
-                shorts === value ? "border-accent bg-accent-soft text-fg" : "border-border text-muted hover:text-fg",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-          <span className="text-xs text-muted">
-            {shorts === "off" ? "Upload only — create clips yourself." : "AI picks the best moments and renders captioned vertical shorts."}
-          </span>
-        </div>
-      )}
+      {aiAvailable && !busy && <ShortsPicker value={shorts} onChange={setShorts} />}
       {phase.kind === "uploading" || phase.kind === "finalizing" ? (
         <div className="rounded-[var(--radius-card)] border border-border bg-surface p-5">
           <div className="flex items-center gap-3">

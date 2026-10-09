@@ -570,3 +570,15 @@ def test_unverified_supabase_email_rejected() -> None:
     assert e.value.code == "EMAIL_NOT_VERIFIED"
     claims["user_metadata"]["email_verified"] = True
     assert verify_access_token(jwt.encode(claims, "s" * 40, algorithm="HS256"), settings).email
+
+
+def test_project_reports_has_transcript(
+    client: TestClient,
+    auth: dict[str, str],
+    talk_video: Path,
+    fake_ai: FakeProvider,
+) -> None:
+    pid = _upload(client, auth, talk_video, None)
+    assert client.get(f"/api/v1/projects/{pid}", headers=auth).json()["has_transcript"] is False
+    client.post(f"/api/v1/projects/{pid}/analyze", headers=auth, json={"auto_render": False})
+    assert client.get(f"/api/v1/projects/{pid}", headers=auth).json()["has_transcript"] is True

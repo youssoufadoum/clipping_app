@@ -39,6 +39,7 @@ def _uuid() -> uuid.UUID:
 class ProjectStatus(enum.StrEnum):
     draft = "draft"
     uploading = "uploading"
+    importing = "importing"
     queued = "queued"
     inspecting = "inspecting"
     ready = "ready"  # source stored and inspected; clips can be created
@@ -67,6 +68,7 @@ class JobType(enum.StrEnum):
     transcribe = "transcribe"
     analyze = "analyze"
     generate_shorts = "generate_shorts"
+    import_url = "import_url"
 
 
 class ClipStatus(enum.StrEnum):

@@ -128,3 +128,34 @@ describe("editor history", () => {
     expect(h.future[0].title).toBe("Renamed");
   });
 });
+
+describe("parseYouTubeId", async () => {
+  const { parseYouTubeId } = await import("@/lib/youtube");
+  const id = "dQw4w9WgXcQ";
+  it("accepts single-video links", () => {
+    for (const url of [
+      `https://www.youtube.com/watch?v=${id}`,
+      `youtube.com/watch?v=${id}&t=10`,
+      `https://youtu.be/${id}?si=x`,
+      `https://m.youtube.com/shorts/${id}`,
+      `https://www.youtube.com/live/${id}`,
+      `  https://youtu.be/${id}  `,
+    ]) {
+      expect(parseYouTubeId(url)).toBe(id);
+    }
+  });
+  it("rejects other hosts, playlists and malformed ids", () => {
+    for (const url of [
+      `https://evil.com/watch?v=${id}`,
+      `https://youtube.com.evil.com/watch?v=${id}`,
+      `https://user:pw@youtube.com/watch?v=${id}`,
+      `https://youtube.com:8443/watch?v=${id}`,
+      "https://www.youtube.com/playlist?list=PL1",
+      "https://www.youtube.com/watch?v=short",
+      "hello world",
+      "",
+    ]) {
+      expect(parseYouTubeId(url)).toBeNull();
+    }
+  });
+});

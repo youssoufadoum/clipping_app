@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app/app-shell";
 import { ProjectCard } from "@/components/app/project-card";
+import { LinkImporter } from "@/components/app/link-importer";
+import { OrDivider } from "@/components/app/or-divider";
 import { Uploader } from "@/components/app/uploader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,7 +88,7 @@ export function DashboardView() {
     <>
       <PageHeader
         title={name ? `Welcome back, ${name}` : "Dashboard"}
-        description="Upload a long video to start cutting clips."
+        description="Paste a YouTube link or upload a video to make shorts."
         actions={
           <Button asChild>
             <Link href="/projects/new">
@@ -97,6 +99,8 @@ export function DashboardView() {
       />
       <div className="grid gap-6 px-4 py-6 sm:px-8 xl:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-6">
+          <LinkImporter />
+          <OrDivider />
           <Uploader compact />
 
           <section aria-labelledby="projects-heading" className="space-y-4">

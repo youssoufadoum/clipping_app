@@ -6,6 +6,7 @@ type AnyStatus = ProjectStatus | JobStatus | ClipStatus;
 const STYLES: Record<string, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-surface-2 text-muted" },
   uploading: { label: "Uploading", cls: "bg-accent-soft text-accent" },
+  importing: { label: "Importing", cls: "bg-accent-soft text-accent" },
   queued: { label: "Queued", cls: "bg-accent-soft text-accent" },
   inspecting: { label: "Processing", cls: "bg-accent-soft text-accent" },
   running: { label: "Running", cls: "bg-accent-soft text-accent" },
@@ -23,7 +24,7 @@ const STYLES: Record<string, { label: string; cls: string }> = {
   archived: { label: "Archived", cls: "bg-surface-2 text-muted" },
 };
 
-export const ACTIVE_STATUSES = new Set(["uploading", "queued", "inspecting", "running", "rendering", "transcribing", "analyzing", "generating"]);
+export const ACTIVE_STATUSES = new Set(["uploading", "importing", "queued", "inspecting", "running", "rendering", "transcribing", "analyzing", "generating"]);
 
 export function StatusBadge({ status, className }: { status: AnyStatus; className?: string }) {
   const style = STYLES[status] ?? { label: status, cls: "bg-surface-2 text-muted" };

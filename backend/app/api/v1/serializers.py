@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import AssetType, Clip, MediaAsset, ProcessingJob, Project
+from app.models import AssetType, Clip, MediaAsset, ProcessingJob, Project, Transcript
 from app.schemas import ClipOut, JobOut, ProjectOut
 from app.services.storage import get_storage
 from app.worker.tasks import settings_hash
@@ -58,10 +58,15 @@ def projects_out(db: Session, projects: Sequence[Project]) -> list[ProjectOut]:
         ).all()
     )
     jobs = _latest_jobs(db, ProcessingJob.project_id, ids)
+    transcribed = set(
+        db.scalars(select(Transcript.project_id).where(Transcript.project_id.in_(ids)))
+    )
     out = []
     for p in projects:
         item = ProjectOut.model_validate(p)
         item.clip_count = int(counts.get(p.id, 0))
+        item.has_transcript = p.id in transcribed
+        item.source_url = ((p.processing_settings or {}).get("import") or {}).get("url")
         item.thumbnail_url = _signed(thumbs.get(p.id))
         job = jobs.get(p.id)
         item.latest_job = JobOut.model_validate(job) if job else None
